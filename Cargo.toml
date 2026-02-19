@@ -19,3 +19,6 @@ pbkdf2 = "0.12"
 sha1 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 crossterm = "0.28"
+scraper = "0.24"
+html2md = "0.2"
+regex = "1.12"

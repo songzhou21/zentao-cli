@@ -8,10 +8,12 @@ use std::path::Path;
 use std::path::PathBuf;
 
 mod api;
+mod bug;
 mod browser;
 mod config;
 
 use api::ZentaoApi;
+use bug::{parse_bug_detail, render_markdown};
 use browser::{list_chrome_profiles_macos, load_zentao_cookie_from_chrome_macos};
 use config::{default_config_path, load_config, save_config, Config};
 
@@ -52,6 +54,12 @@ enum Commands {
         #[command(subcommand)]
         command: ChromeCommands,
     },
+
+    /// Bug 相关命令
+    Bug {
+        #[command(subcommand)]
+        command: BugCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -61,6 +69,31 @@ enum ChromeCommands {
         /// 配置文件路径（默认 ~/.zentao/config.json）
         #[arg(long)]
         config: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BugCommands {
+    /// 按 bug id 获取详情并输出 Markdown
+    Show {
+        /// Bug ID
+        id: u64,
+
+        /// 禅道地址，例如 https://zentao.example.com
+        #[arg(long)]
+        url: Option<String>,
+
+        /// Chrome profile 目录（可选，默认优先读取配置中的 chrome_profile）
+        #[arg(long)]
+        profile: Option<PathBuf>,
+
+        /// 配置文件路径（默认 ~/.zentao/config.json）
+        #[arg(long)]
+        config: Option<PathBuf>,
+
+        /// 输出 Markdown 文件路径（可选，不填则输出到终端）
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
 }
 
@@ -163,6 +196,42 @@ async fn main() -> Result<()> {
                 save_config(&path, &cfg)?;
                 println!("已保存 chrome_profile: {}", selected.display());
                 println!("配置文件: {}", path.display());
+            }
+        },
+        Commands::Bug { command } => match command {
+            BugCommands::Show {
+                id,
+                url,
+                profile,
+                config,
+                out,
+            } => {
+                let path = config.unwrap_or(default_config_path()?);
+                let file_cfg = load_config_optional(&path)?;
+                let url =
+                    resolve_required(url, file_cfg.as_ref().map(|c| c.url.as_str()), "url")?;
+                let profile = profile.or_else(|| {
+                    file_cfg
+                        .as_ref()
+                        .and_then(|c| c.chrome_profile.as_ref())
+                        .map(PathBuf::from)
+                });
+
+                let api = ZentaoApi::new(&url, "v1")?;
+                let cookie = load_zentao_cookie_from_chrome_macos(&url, profile.as_deref())?;
+                let (final_url, html) = api.fetch_bug_html(id, cookie.cookie_header.as_str()).await?;
+                let detail = parse_bug_detail(&final_url, &html)?;
+                let markdown = render_markdown(id, &detail);
+
+                if let Some(out_path) = out {
+                    if let Some(parent) = out_path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out_path, markdown.as_bytes())?;
+                    println!("Markdown 已写入 {}", out_path.display());
+                } else {
+                    println!("{}", markdown);
+                }
             }
         },
     }
