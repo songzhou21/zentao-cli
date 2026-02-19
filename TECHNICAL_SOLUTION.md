@@ -1,0 +1,58 @@
+# 禅道 CLI 技术方案（Rust）
+
+## 概述
+
+当前认证策略为：**每次命令执行时从 Chrome（macOS）读取现有会话 Cookie，不将 Cookie 持久化到 `config.json`**。
+
+## 目标
+
+- 稳定读取浏览器中当前有效的 zentao 会话 Cookie
+- 提供 Cookie 有效性校验能力
+- 提供可选的 Chrome Profile 管理能力并持久化选择
+- 降低配置文件中敏感信息落盘风险
+
+## 认证与校验规则
+
+- Cookie 来源：Chrome `Cookies` SQLite（macOS）
+- 关键 Cookie：`za`、`zentaosid`、`zp`
+- 校验规则：
+  1. 访问站点根路径（如 `http://shendao.sharexm.cn/zentao`）
+  2. 若最终跳转到 `/my/` 判定有效
+  3. 若最终跳转到 `user-login-*.html` 判定失效
+
+## CLI 设计
+
+- `zentao cookie`
+  - 参数：`--url`、`--profile`、`--verify`、`--api-version`、`--config`
+  - profile 优先级：`--profile` > `config.chrome_profile` > 自动选择最新 profile
+- `zentao chrome profile`
+  - 列出可用 Chrome profiles
+  - 交互选择并保存到 `config.chrome_profile`
+
+## 配置文件
+
+- 路径：`~/.zentao/config.json`
+- 主要字段：
+  - `url`
+  - `api_version`
+  - `chrome_profile`（可选）
+- Cookie 不落盘
+
+## 数据流
+
+1. 读取 `url`（命令行优先，配置回退）
+2. 确定 profile（CLI 覆盖 > 配置 > 自动）
+3. 从 Chrome 读取并解密 Cookie
+4. 输出 Cookie 明细与统一过期时间
+5. 如指定 `--verify`，执行校验并输出结果
+
+## 输出
+
+- 高亮过期时间（UTC 格式化；会话 Cookie 为 `session`）
+- 明细字段：`name/value/domain/path/secure/httpOnly`
+- 校验结果：成功绿色，失败红色
+
+## 安全建议
+
+- 默认不将 Cookie 持久化到配置文件
+- 输出日志避免泄露到共享日志系统（含完整 cookie 值）
