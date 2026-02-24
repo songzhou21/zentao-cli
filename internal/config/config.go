@@ -13,7 +13,6 @@ type Config struct {
 	Password      *string `json:"password,omitempty"`
 	Code          *string `json:"code,omitempty"`
 	Token         *string `json:"token,omitempty"`
-	APIVersion    string  `json:"api_version"`
 	ChromeProfile *string `json:"chrome_profile,omitempty"`
 }
 
@@ -34,16 +33,10 @@ func LoadConfig(path string) (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("解析配置失败: %s (%w)", path, err)
 	}
-	if cfg.APIVersion == "" {
-		cfg.APIVersion = "v1"
-	}
 	return &cfg, nil
 }
 
 func SaveConfig(path string, cfg *Config) error {
-	if cfg.APIVersion == "" {
-		cfg.APIVersion = "v1"
-	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
 	}
@@ -80,5 +73,5 @@ func LoadOrDefault(path string) (*Config, error) {
 	if cfg != nil {
 		return cfg, nil
 	}
-	return &Config{APIVersion: "v1"}, nil
+	return &Config{}, nil
 }

@@ -43,7 +43,6 @@ zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.m
 - 配置文件路径：`~/.zentao/config.json`
 - 字段：
   - `url`（可被 `--url` 覆盖）
-  - `api_version`
   - `chrome_profile`（由 `zentao chrome profile` 写入）
 - Cookie 不会持久化到配置文件
 

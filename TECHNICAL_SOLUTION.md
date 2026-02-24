@@ -49,7 +49,6 @@
 - 路径：`~/.zentao/config.json`
 - 主要字段：
   - `url`
-  - `api_version`
   - `chrome_profile`（可选）
 - Cookie 不落盘
 

@@ -63,9 +63,6 @@ func runCookie(args []string) error {
 	}
 	apiVersion := strings.TrimSpace(*apiVersionFlag)
 	if apiVersion == "" {
-		apiVersion = getConfigString(cfg, func(c *config.Config) string { return c.APIVersion })
-	}
-	if apiVersion == "" {
 		apiVersion = "v1"
 	}
 
