@@ -10,32 +10,45 @@
 - 支持管理 Chrome Profile 并保存到 `config.json`
 - 支持按 Bug ID 抓取详情并输出 Markdown（正文图片地址自动补全）
 
-## 使用示例
+## 构建与运行
 
 ```bash
-# 构建
+# 1) 构建二进制
 go build -o zentao ./cmd/zentao
+
+# 2) 查看帮助
+./zentao help
+
+# 3) 运行示例（读取 cookie）
+./zentao cookie --url http://shendao.sharexm.cn/zentao
 ```
 
 ```bash
+# 不落地二进制，直接运行
+go run ./cmd/zentao help
+```
+
+## 使用示例
+
+```bash
 # 1) 列出并选择 Chrome profile，保存到配置
-zentao chrome profile
+./zentao chrome profile
 
 # 2) 读取 Cookie（默认使用配置中的 chrome_profile）
-zentao cookie --url http://shendao.sharexm.cn/zentao
+./zentao cookie --url http://shendao.sharexm.cn/zentao
 
 # 3) 临时覆盖 profile
-zentao cookie --url http://shendao.sharexm.cn/zentao \
+./zentao cookie --url http://shendao.sharexm.cn/zentao \
   --profile "/Users/you/Library/Application Support/Google/Chrome/Profile 1"
 
 # 4) 读取后执行校验
-zentao cookie --url http://shendao.sharexm.cn/zentao --verify
+./zentao cookie --url http://shendao.sharexm.cn/zentao --verify
 
 # 5) 按 Bug ID 输出 Markdown 到终端
-zentao bug show 51214 --url http://shendao.sharexm.cn/zentao
+./zentao bug show 51214 --url http://shendao.sharexm.cn/zentao
 
 # 6) 按 Bug ID 输出 Markdown 到文件
-zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.md
+./zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.md
 ```
 
 ## 配置说明
@@ -57,7 +70,8 @@ zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.m
 - `# Bug #<id> <标题>`
 - `## 描述`（HTML 转 Markdown）
 - 正文中的图片链接会自动补全为绝对地址
-- 空图片名会自动命名为 `img-<编号>-<序号>`（例如 `img-59651-1`）
+- 空图片名会自动命名为 `img#<序号>`（例如 `img#1`）
+- 若页面包含“附件”区块，会在描述末尾追加附件链接列表（`attachment#1`、`attachment#2`...）
 - 不会额外追加“图片地址”独立 section（图片保持在步骤/描述正文内）
 - 指定 `--out` 时仅输出写入结果提示，不在终端打印正文 Markdown
 

@@ -3,7 +3,6 @@ package bug
 import (
 	"fmt"
 	"net/url"
-	"path"
 	"regexp"
 	"strings"
 
@@ -42,6 +41,12 @@ func ParseBugDetail(pageURL string, html string) (*BugDetail, error) {
 	if err != nil {
 		return nil, err
 	}
+	attachments, err := extractAttachmentURLs(doc, pageURL)
+	if err != nil {
+		return nil, err
+	}
+	markdown = appendAttachmentLinks(markdown, attachments)
+	markdown = normalizeMarkdown(markdown)
 
 	return &BugDetail{Title: title, MarkdownDescription: markdown}, nil
 }
@@ -95,7 +100,7 @@ func absolutizeMarkdownImageURLs(markdown, pageURL string) (string, error) {
 		return "", fmt.Errorf("解析 bug 页面 URL 失败: %w", err)
 	}
 	re := regexp.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
-	autoNameCounts := map[string]int{}
+	autoNameIndex := 0
 
 	result := re.ReplaceAllStringFunc(markdown, func(m string) string {
 		parts := re.FindStringSubmatch(m)
@@ -113,9 +118,8 @@ func absolutizeMarkdownImageURLs(markdown, pageURL string) (string, error) {
 		}
 		alt := altRaw
 		if alt == "" {
-			key := deriveImageKey(abs)
-			autoNameCounts[key]++
-			alt = fmt.Sprintf("img-%s-%d", key, autoNameCounts[key])
+			autoNameIndex++
+			alt = fmt.Sprintf("img#%d", autoNameIndex)
 		}
 		return fmt.Sprintf("![%s](%s)", alt, abs)
 	})
@@ -123,24 +127,65 @@ func absolutizeMarkdownImageURLs(markdown, pageURL string) (string, error) {
 	return result, nil
 }
 
-func deriveImageKey(absURL string) string {
-	u, err := url.Parse(absURL)
+func normalizeMarkdown(markdown string) string {
+	// html-to-markdown may escape bracket text like \[基本信息]。这里统一还原为可读格式。
+	markdown = strings.ReplaceAll(markdown, `\[`, `[`)
+	markdown = strings.ReplaceAll(markdown, `\]`, `]`)
+	return markdown
+}
+
+func extractAttachmentURLs(doc *goquery.Document, pageURL string) ([]string, error) {
+	base, err := url.Parse(pageURL)
 	if err != nil {
-		return "unknown"
+		return nil, fmt.Errorf("解析 bug 页面 URL 失败: %w", err)
 	}
-	name := path.Base(u.Path)
-	if name == "." || name == "/" || name == "" {
-		return "unknown"
+
+	var urls []string
+	seen := map[string]struct{}{}
+
+	doc.Find("div.detail").Each(func(_ int, detail *goquery.Selection) {
+		title := strings.TrimSpace(detail.Find(".detail-title").First().Text())
+		if !strings.Contains(title, "附件") {
+			return
+		}
+		detail.Find(".files-list a[href]").Each(func(_ int, a *goquery.Selection) {
+			href, ok := a.Attr("href")
+			if !ok {
+				return
+			}
+			href = strings.TrimSpace(href)
+			if href == "" || strings.HasPrefix(strings.ToLower(href), "javascript:") {
+				return
+			}
+			// 只保留真实附件链接，忽略“重命名”等管理链接。
+			if strings.Contains(href, "/file-edit-") {
+				return
+			}
+			u, err := absolutizeURL(base, href)
+			if err != nil {
+				return
+			}
+			if _, exists := seen[u]; exists {
+				return
+			}
+			seen[u] = struct{}{}
+			urls = append(urls, u)
+		})
+	})
+	return urls, nil
+}
+
+func appendAttachmentLinks(markdown string, attachmentURLs []string) string {
+	if len(attachmentURLs) == 0 {
+		return markdown
 	}
-	stem := strings.TrimSuffix(name, path.Ext(name))
-	numbers := regexp.MustCompile(`(\d+)`).FindAllString(stem, -1)
-	if len(numbers) > 0 {
-		return numbers[len(numbers)-1]
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(markdown))
+	b.WriteString("\n\nAttachments:\n")
+	for i, u := range attachmentURLs {
+		b.WriteString(fmt.Sprintf("- [attachment#%d](%s)\n", i+1, u))
 	}
-	if stem == "" {
-		return "unknown"
-	}
-	return stem
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func absolutizeURL(base *url.URL, raw string) (string, error) {
