@@ -13,6 +13,11 @@
 ## 使用示例
 
 ```bash
+# 构建
+go build -o zentao ./cmd/zentao
+```
+
+```bash
 # 1) 列出并选择 Chrome profile，保存到配置
 zentao chrome profile
 
