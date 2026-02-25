@@ -2,8 +2,12 @@ use super::*;
 
 // 复用既有 HTML fixture，避免在线依赖导致测试不稳定。
 fn read_fixture(name: &str) -> String {
-    std::fs::read_to_string(format!("internal/bug/testdata/bug_html/{name}"))
-        .expect("fixture should exist")
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("bug")
+        .join(name);
+    std::fs::read_to_string(path).expect("fixture should exist")
 }
 
 // 真实页面样本应能提取标题、关键描述和图片绝对地址。

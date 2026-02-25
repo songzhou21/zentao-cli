@@ -31,9 +31,9 @@
 
 `bug` 模块复用：
 
-- `internal/bug/testdata/bug_html/bug_48919_real.html`
-- `internal/bug/testdata/bug_html/bug_missing_title.html`
-- `internal/bug/testdata/bug_html/bug_missing_desc.html`
+- `tests/fixtures/bug/bug_48919_real.html`
+- `tests/fixtures/bug/bug_missing_title.html`
+- `tests/fixtures/bug/bug_missing_desc.html`
 
 ## 运行方式
 

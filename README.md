@@ -62,6 +62,21 @@ cargo run -- --help
   - `chrome_profile`（由 `zentao chrome profile` 写入）
 - Cookie 不会持久化到配置文件
 
+## 测试
+
+```bash
+# 运行全部测试
+cargo test
+
+# 仅运行 bug 模块测试（包含 fixture 回归）
+cargo test bug::tests
+
+# 仅运行某个模块测试
+cargo test browser::tests
+```
+
+更多测试说明见 `docs/TESTING.md`。
+
 ## 平台支持
 
 - 当前仅支持 macOS（Chrome Cookie 读取依赖 macOS Keychain + Chrome SQLite）
