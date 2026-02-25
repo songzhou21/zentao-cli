@@ -1,4 +1,4 @@
-# zentao-cli
+# zentao-cli (Rust)
 
 禅道 CLI 工具，当前以 Chrome（macOS）中的登录会话 Cookie 为认证来源。
 
@@ -14,41 +14,44 @@
 
 ```bash
 # 1) 构建二进制
-go build -o zentao ./cmd/zentao
+cargo build --release
 
 # 2) 查看帮助
-./zentao help
+./target/release/zentao --help
 
 # 3) 运行示例（读取 cookie）
-./zentao cookie --url http://shendao.sharexm.cn/zentao
+./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao
 ```
 
 ```bash
-# 不落地二进制，直接运行
-go run ./cmd/zentao help
+# 不落地 release 二进制，直接运行
+cargo run -- --help
 ```
 
 ## 使用示例
 
 ```bash
 # 1) 列出并选择 Chrome profile，保存到配置
-./zentao chrome profile
+./target/release/zentao chrome profile
 
 # 2) 读取 Cookie（默认使用配置中的 chrome_profile）
-./zentao cookie --url http://shendao.sharexm.cn/zentao
+./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao
 
 # 3) 临时覆盖 profile
-./zentao cookie --url http://shendao.sharexm.cn/zentao \
+./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao \
   --profile "/Users/you/Library/Application Support/Google/Chrome/Profile 1"
 
 # 4) 读取后执行校验
-./zentao cookie --url http://shendao.sharexm.cn/zentao --verify
+./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao --verify
 
 # 5) 按 Bug ID 输出 Markdown 到终端
-./zentao bug show 51214 --url http://shendao.sharexm.cn/zentao
+./target/release/zentao bug show 51214 --url http://shendao.sharexm.cn/zentao
 
 # 6) 按 Bug ID 输出 Markdown 到文件
-./zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.md
+./target/release/zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.md
+
+# 7) 直接传 Bug 详情 URL（自动提取 ID）
+./target/release/zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html --url http://shendao.sharexm.cn/zentao
 ```
 
 ## 配置说明
@@ -59,24 +62,6 @@ go run ./cmd/zentao help
   - `chrome_profile`（由 `zentao chrome profile` 写入）
 - Cookie 不会持久化到配置文件
 
-## 输出说明
+## 平台支持
 
-`zentao cookie` 会输出：
-- 高亮过期时间（黄色）
-- 明细字段：`name/value/domain/path/secure/httpOnly`
-- 指定 `--verify` 时校验结果：成功绿色高亮，失败红色高亮（并返回非 0）
-
-`zentao bug show` 会输出：
-- `# Bug #<id> <标题>`
-- `## 描述`（HTML 转 Markdown）
-- 正文中的图片链接会自动补全为绝对地址
-- 空图片名会自动命名为 `img#<序号>`（例如 `img#1`）
-- 若页面包含“附件”区块，会在描述末尾追加附件链接列表（`attachment#1`、`attachment#2`...）
-- 不会额外追加“图片地址”独立 section（图片保持在步骤/描述正文内）
-- 指定 `--out` 时仅输出写入结果提示，不在终端打印正文 Markdown
-
-## Bug 详情抓取规则
-
-- 页面地址模板：`<url>/bug-view-<id>.html`
-- 例如：`http://shendao.sharexm.cn/zentao/bug-view-51214.html`
-- 标题优先解析：`div.page-title span.text`（优先取 `title` 属性）
+- 当前仅支持 macOS（Chrome Cookie 读取依赖 macOS Keychain + Chrome SQLite）

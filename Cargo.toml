@@ -1,0 +1,28 @@
+[package]
+name = "zentao-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "zentao"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "6.0"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+url = "2.5"
+rusqlite = { version = "0.32", features = ["bundled"] }
+tempfile = "3.13"
+aes = "0.8"
+cbc = "0.1"
+cipher = "0.4"
+pbkdf2 = "0.12"
+sha1 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+scraper = "0.22"
+html2md = "0.2"
+regex = "1.11"
