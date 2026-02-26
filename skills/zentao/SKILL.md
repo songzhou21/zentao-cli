@@ -47,6 +47,20 @@ zentao bug show <ID_OR_URL> --url <zentao-url>
 zentao bug show <ID_OR_URL> --url <zentao-url> --out ./bug-<id>.md
 ```
 
+4. 当输出里包含图片链接时，必须下载并查看图片
+- 触发条件：Markdown 描述中出现 `![img#n](http://.../file-read-xxxx.png)` 等图片链接
+- 必做动作：使用 `curl` 下载图片到本地，再查看图片内容后再进行问题分析
+- 推荐命令：
+
+```bash
+TMP_BUG_DIR="${TMPDIR:-/tmp}/zentao_bug_images"
+mkdir -p "$TMP_BUG_DIR"
+curl -L "http://shendao.sharexm.cn/zentao/file-read-62743.png" -o "$TMP_BUG_DIR/62743.png"
+curl -L "http://shendao.sharexm.cn/zentao/file-read-62744.png" -o "$TMP_BUG_DIR/62744.png"
+```
+
+- 分析要求：不能只基于文字描述；需要结合截图中的 UI 状态、按钮文案、抓包字段给出结论
+
 ## 输出格式约束
 
 输出内容必须包含：
@@ -66,6 +80,7 @@ zentao bug show <ID_OR_URL> --url <zentao-url> --out ./bug-<id>.md
 - 页面跳登录：报 cookie 失效
 - 页面为空：报“页面内容为空”
 - 缺标题/缺描述：报解析错误
+- 图片链接无法访问：明确说明失败原因（DNS / 网络权限 / cookie 失效），并继续给出可执行的下一步（如申请网络权限后重试 `curl`）
 
 ## 常用示例
 
