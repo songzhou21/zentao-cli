@@ -9,6 +9,7 @@
 - 可选校验 Cookie 是否有效（根路径重定向规则）
 - 支持管理 Chrome Profile 并保存到 `config.json`
 - 支持按 Bug ID 抓取详情并输出 Markdown（正文图片地址自动补全）
+- 支持按图片 URL 直接下载到本地（`image download --url`）
 
 ## 构建与运行
 
@@ -69,6 +70,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 # 7) 直接传 Bug 详情 URL（自动提取 ID）
 ./target/release/zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html --url http://shendao.sharexm.cn/zentao
+
+# 8) 直接下载图片 URL 到本地
+./target/release/zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
 ```
 
 ## 配置说明

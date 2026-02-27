@@ -6,10 +6,13 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{TimeZone, Utc};
 use clap::{Args, Parser, Subcommand};
 use regex::Regex;
+use reqwest::Url;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao")]
@@ -23,6 +26,7 @@ enum Commands {
     Cookie(CookieArgs),
     Chrome(ChromeArgs),
     Bug(BugArgs),
+    Image(ImageArgs),
 }
 
 #[derive(Debug, Args)]
@@ -81,6 +85,23 @@ struct BugShowArgs {
     out: Option<String>,
 }
 
+#[derive(Debug, Args)]
+struct ImageArgs {
+    #[command(subcommand)]
+    command: ImageSubCommands,
+}
+
+#[derive(Debug, Subcommand)]
+enum ImageSubCommands {
+    Download(ImageDownloadArgs),
+}
+
+#[derive(Debug, Args)]
+struct ImageDownloadArgs {
+    #[arg(long)]
+    url: String,
+}
+
 pub fn run(args: Vec<OsString>) -> Result<()> {
     let cli = Cli::try_parse_from(std::iter::once(OsString::from("zentao")).chain(args))
         .map_err(|e| anyhow!(e.to_string()))?;
@@ -89,6 +110,7 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
         Commands::Cookie(args) => run_cookie(args),
         Commands::Chrome(args) => run_chrome(args),
         Commands::Bug(args) => run_bug(args),
+        Commands::Image(args) => run_image(args),
     }
 }
 
@@ -212,6 +234,12 @@ fn run_bug(args: BugArgs) -> Result<()> {
     }
 }
 
+fn run_image(args: ImageArgs) -> Result<()> {
+    match args.command {
+        ImageSubCommands::Download(d) => run_image_download(d),
+    }
+}
+
 fn run_bug_show(args: BugShowArgs) -> Result<()> {
     let bug_id = parse_bug_id_or_url(&args.id_or_url)?;
     let cfg_path = resolve_config_path(args.config.as_deref())?;
@@ -247,6 +275,102 @@ fn run_bug_show(args: BugShowArgs) -> Result<()> {
     }
 
     print!("{}", markdown);
+    Ok(())
+}
+
+fn run_image_download(args: ImageDownloadArgs) -> Result<()> {
+    let image_url = validate_image_url(&args.url)?;
+    let out_dir = Path::new(IMAGE_DOWNLOAD_DIR);
+    fs::create_dir_all(out_dir).context("创建图片下载目录失败")?;
+
+    let out_path = resolve_output_path_from_url(out_dir, &image_url);
+    let started = std::time::Instant::now();
+    download_single_image(&image_url, &out_path)?;
+    let elapsed_ms = started.elapsed().as_millis();
+    println!(
+        "Downloaded: {} -> {} ({}ms)",
+        image_url,
+        out_path.display(),
+        elapsed_ms
+    );
+    Ok(())
+}
+
+fn validate_image_url(raw: &str) -> Result<Url> {
+    let v = raw.trim();
+    if v.is_empty() {
+        return Err(anyhow!("图片 URL 无效"));
+    }
+    let url = Url::parse(v).map_err(|_| anyhow!("图片 URL 无效"))?;
+    match url.scheme() {
+        "http" | "https" => Ok(url),
+        _ => Err(anyhow!("图片 URL 无效")),
+    }
+}
+
+fn resolve_output_path_from_url(base_dir: &Path, url: &Url) -> PathBuf {
+    let name = url
+        .path_segments()
+        .and_then(|segments| segments.filter(|seg| !seg.is_empty()).last())
+        .filter(|seg| !seg.trim().is_empty())
+        .unwrap_or("downloaded-image.img");
+
+    let filename = ensure_filename_extension(name);
+    unique_file_path(base_dir, &filename)
+}
+
+fn ensure_filename_extension(filename: &str) -> String {
+    let p = Path::new(filename);
+    if p.extension().is_some() {
+        return filename.to_string();
+    }
+    format!("{filename}.img")
+}
+
+fn unique_file_path(base_dir: &Path, filename: &str) -> PathBuf {
+    let mut candidate = base_dir.join(filename);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let p = Path::new(filename);
+    let stem = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("image");
+    let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+    let mut idx = 1usize;
+    loop {
+        let next = if ext.is_empty() {
+            format!("{stem}({idx})")
+        } else {
+            format!("{stem}({idx}).{ext}")
+        };
+        candidate = base_dir.join(next);
+        if !candidate.exists() {
+            return candidate;
+        }
+        idx += 1;
+    }
+}
+
+fn download_single_image(url: &Url, out: &Path) -> Result<()> {
+    let client = reqwest::blocking::Client::builder()
+        .build()
+        .context("初始化 HTTP 客户端失败")?;
+
+    let resp = client
+        .get(url.clone())
+        .send()
+        .with_context(|| format!("下载图片失败: {}", url))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(anyhow!("下载失败: HTTP {}", status.as_u16()));
+    }
+    let body = resp.bytes().context("读取图片响应体失败")?;
+    fs::write(out, &body).with_context(|| format!("写入图片失败: {}", out.display()))?;
     Ok(())
 }
 
