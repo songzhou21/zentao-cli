@@ -47,6 +47,9 @@ fn parse_real_51267_multiple_images_fixture() {
     assert!(detail
         .markdown_description
         .contains("![img#2](http://shendao.sharexm.cn/zentao/file-read-62827.png)"));
+    assert!(detail.markdown_description.contains(
+        "![img#1](http://shendao.sharexm.cn/zentao/file-read-62828.jpeg)\n\n![img#2](http://shendao.sharexm.cn/zentao/file-read-62827.png)"
+    ));
     assert!(!detail.markdown_description.contains("Attachments:"));
     assert!(!detail.markdown_description.contains(r"\["));
     assert!(!detail.markdown_description.contains(r"\]"));
@@ -95,6 +98,29 @@ fn absolutize_markdown_image_urls_cases() {
 fn normalize_markdown_unescapes_brackets() {
     let out = normalize_markdown(r"**\[基本信息\]**");
     assert_eq!(out, "**[基本信息]**");
+}
+
+// 连续图片应拆成逐行，便于阅读和下游渲染。
+#[test]
+fn split_adjacent_markdown_images_cases() {
+    let out = split_adjacent_markdown_images("![a](http://x/a.png)![b](http://x/b.png)")
+        .expect("split should succeed");
+    assert_eq!(out, "![a](http://x/a.png)\n\n![b](http://x/b.png)");
+
+    let normalized = split_adjacent_markdown_images("![a](http://x/a.png)\n![b](http://x/b.png)")
+        .expect("split should succeed");
+    assert_eq!(normalized, "![a](http://x/a.png)\n\n![b](http://x/b.png)");
+}
+
+// 形如 **[结果] ... ** 的加粗范围应仅保留在标题，图片不应被加粗。
+#[test]
+fn normalize_bracket_heading_bold_scope_cases() {
+    let input = "**[结果]\n![img#1](http://x/1.png)\n![img#2](http://x/2.png)**";
+    let out = normalize_bracket_heading_bold_scope(input).expect("normalize should succeed");
+    assert_eq!(
+        out,
+        "**[结果]**\n![img#1](http://x/1.png)\n![img#2](http://x/2.png)"
+    );
 }
 
 // 附件列表应追加编号链接；无附件时保持原文。

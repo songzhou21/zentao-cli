@@ -19,6 +19,8 @@ pub fn parse_bug_detail(page_url: &str, html: &str) -> Result<BugDetail> {
     let desc_html = desc_node.inner_html();
     let mut markdown = html2md::parse_html(&desc_html).trim().to_string();
     markdown = absolutize_markdown_image_urls(&markdown, page_url)?;
+    markdown = split_adjacent_markdown_images(&markdown)?;
+    markdown = normalize_bracket_heading_bold_scope(&markdown)?;
 
     let attachments = extract_attachment_urls(&doc, page_url)?;
     markdown = append_attachment_links(&markdown, &attachments);
@@ -151,6 +153,22 @@ fn absolutize_markdown_image_urls(markdown: &str, page_url: &str) -> Result<Stri
 
 fn normalize_markdown(markdown: &str) -> String {
     markdown.replace(r"\[", "[").replace(r"\]", "]")
+}
+
+fn split_adjacent_markdown_images(markdown: &str) -> Result<String> {
+    let re = Regex::new(r"\)\s*!\[").context("构建连续图片分隔正则失败")?;
+    Ok(re.replace_all(markdown, ")\n\n![").to_string())
+}
+
+fn normalize_bracket_heading_bold_scope(markdown: &str) -> Result<String> {
+    let open_re = Regex::new(r"\*\*(\[[^\]]+\])\s*\n").context("构建加粗标题起始正则失败")?;
+    let mut out = open_re.replace_all(markdown, "**$1**\n").to_string();
+
+    // 清理因原始转换导致附着在图片后的尾部加粗标记。
+    let close_re =
+        Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建加粗标题结束正则失败")?;
+    out = close_re.replace_all(&out, "$1").to_string();
+    Ok(out)
 }
 
 fn extract_attachment_urls(doc: &Html, page_url: &str) -> Result<Vec<String>> {

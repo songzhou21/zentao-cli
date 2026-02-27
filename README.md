@@ -28,6 +28,23 @@ cargo build --release
 cargo run -- --help
 ```
 
+## 安装
+
+```bash
+# 安装到 ~/.cargo/bin（覆盖已有版本）
+cargo install --path . --force
+
+# 验证
+which zentao
+zentao --help
+```
+
+如果 `which zentao` 不是 `~/.cargo/bin/zentao`，请将以下配置加入 `~/.zshrc`：
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
 ## 使用示例
 
 ```bash
