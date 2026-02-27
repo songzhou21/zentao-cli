@@ -22,12 +22,15 @@ pub struct BrowserCookieItem {
     pub secure: bool,
     pub http_only: bool,
     pub expires_utc: i64,
+    pub creation_utc: i64,
+    pub last_access_utc: i64,
 }
 
 #[derive(Debug, Clone)]
 pub struct BrowserCookieResult {
     pub cookie_header: String,
     pub items: Vec<BrowserCookieItem>,
+    pub profile_path: String,
 }
 
 pub fn list_chrome_profiles_macos() -> Result<Vec<String>> {
@@ -99,7 +102,7 @@ pub fn load_zentao_cookie_from_chrome_macos(
 
     let mut stmt = conn
         .prepare(
-            "SELECT name, value, encrypted_value, path, host_key, is_secure, is_httponly, expires_utc \
+            "SELECT name, value, encrypted_value, path, host_key, is_secure, is_httponly, expires_utc, creation_utc, last_access_utc \
              FROM cookies WHERE host_key LIKE ? AND name IN ('za', 'zentaosid', 'zp')",
         )
         .context("查询 Cookies 失败")?;
@@ -118,6 +121,8 @@ pub fn load_zentao_cookie_from_chrome_macos(
         let secure: i64 = row.get(5).unwrap_or(0);
         let http_only: i64 = row.get(6).unwrap_or(0);
         let expires_utc: i64 = row.get(7).unwrap_or(0);
+        let creation_utc: i64 = row.get(8).unwrap_or(0);
+        let last_access_utc: i64 = row.get(9).unwrap_or(0);
 
         if !host_matches(&host, &row_host) {
             continue;
@@ -140,6 +145,8 @@ pub fn load_zentao_cookie_from_chrome_macos(
             secure: secure != 0,
             http_only: http_only != 0,
             expires_utc,
+            creation_utc,
+            last_access_utc,
         });
     }
 
@@ -165,6 +172,7 @@ pub fn load_zentao_cookie_from_chrome_macos(
     Ok(BrowserCookieResult {
         cookie_header: parts.join("; "),
         items,
+        profile_path: profile_dir.to_string_lossy().to_string(),
     })
 }
 
@@ -245,7 +253,14 @@ fn choose_best_by_path<'a>(items: &'a [BrowserCookieItem], name: &str) -> Option
     items
         .iter()
         .filter(|it| it.name == name && is_cookie_not_expired(it.expires_utc))
-        .max_by_key(|it| it.path.len())
+        .max_by_key(|it| {
+            (
+                it.path.len(),
+                it.last_access_utc,
+                it.creation_utc,
+                it.expires_utc,
+            )
+        })
 }
 
 fn is_cookie_not_expired(expires_utc: i64) -> bool {

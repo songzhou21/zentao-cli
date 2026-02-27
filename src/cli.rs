@@ -109,12 +109,23 @@ fn run_cookie(args: CookieArgs) -> Result<()> {
         .or_else(|| cfg.as_ref().and_then(|c| c.chrome_profile.clone()));
 
     let cookie = browser::load_zentao_cookie_from_chrome_macos(&site_url, profile.as_deref())?;
+    let parsed_site = reqwest::Url::parse(&site_url).context("解析 URL 失败")?;
+    let target_host = parsed_site
+        .host_str()
+        .ok_or_else(|| anyhow!("URL 缺少 host"))?
+        .to_string();
+    let mut matched_domains: Vec<String> = cookie.items.iter().map(|it| it.domain.clone()).collect();
+    matched_domains.sort();
+    matched_domains.dedup();
 
     let expiry = cookie
         .items
         .first()
         .map(|it| format_cookie_expiry(it.expires_utc))
         .unwrap_or_else(|| "unknown".to_string());
+    println!("Chrome profile: {}", cookie.profile_path);
+    println!("目标域名: {}", target_host);
+    println!("命中 cookie 域名: {}", matched_domains.join(", "));
     println!("\x1b[1;33m过期时间: {}\x1b[0m", expiry);
     println!("浏览器 cookie 明细:");
 

@@ -56,6 +56,8 @@ fn test_choose_best_by_path() {
             secure: false,
             http_only: true,
             expires_utc: past,
+            creation_utc: 10,
+            last_access_utc: 20,
         },
         BrowserCookieItem {
             name: "zp".to_string(),
@@ -65,6 +67,8 @@ fn test_choose_best_by_path() {
             secure: false,
             http_only: true,
             expires_utc: future,
+            creation_utc: 30,
+            last_access_utc: 40,
         },
         BrowserCookieItem {
             name: "zp".to_string(),
@@ -74,9 +78,51 @@ fn test_choose_best_by_path() {
             secure: false,
             http_only: true,
             expires_utc: future,
+            creation_utc: 50,
+            last_access_utc: 60,
         },
     ];
 
     let best = choose_best_by_path(&items, "zp").expect("best cookie should exist");
     assert_eq!(best.value, "deep");
+}
+
+// 同 path 的多条 cookie 应选择最近访问（重新登录后最新）的记录。
+#[test]
+fn test_choose_best_by_latest_access_when_path_equal() {
+    let future = unix_to_chrome_expires(
+        (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time should be valid")
+            .as_secs() as i64)
+            + 24 * 3600,
+    );
+
+    let items = vec![
+        BrowserCookieItem {
+            name: "zp".to_string(),
+            value: "old-session".to_string(),
+            domain: "example.com".to_string(),
+            path: "/zentao/".to_string(),
+            secure: false,
+            http_only: true,
+            expires_utc: future,
+            creation_utc: 100,
+            last_access_utc: 100,
+        },
+        BrowserCookieItem {
+            name: "zp".to_string(),
+            value: "new-session".to_string(),
+            domain: "example.com".to_string(),
+            path: "/zentao/".to_string(),
+            secure: false,
+            http_only: true,
+            expires_utc: future,
+            creation_utc: 200,
+            last_access_utc: 200,
+        },
+    ];
+
+    let best = choose_best_by_path(&items, "zp").expect("best cookie should exist");
+    assert_eq!(best.value, "new-session");
 }
