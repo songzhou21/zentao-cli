@@ -2,6 +2,7 @@ use crate::api::ZentaoApi;
 use crate::browser;
 use crate::bug;
 use crate::config;
+use crate::search;
 use anyhow::{anyhow, Context, Result};
 use chrono::{TimeZone, Utc};
 use clap::{Args, Parser, Subcommand};
@@ -13,6 +14,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
+const DEFAULT_SEARCH_PRODUCT_ID: u64 = 92;
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao")]
@@ -27,6 +29,7 @@ enum Commands {
     Chrome(ChromeArgs),
     Bug(BugArgs),
     Image(ImageArgs),
+    Search(SearchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -102,6 +105,38 @@ struct ImageDownloadArgs {
     url: String,
 }
 
+/// 搜索 Bug（支持按指派者、解决日期等条件筛选）
+#[derive(Debug, Args)]
+struct SearchArgs {
+    /// 指派给（用户名），例如 zhousong
+    #[arg(long, value_name = "USER")]
+    assigned_to: Option<String>,
+
+    /// 解决日期起始（含），格式 YYYY-MM-DD
+    #[arg(long, value_name = "DATE")]
+    resolved_date_from: Option<String>,
+
+    /// 解决日期截止（含），格式 YYYY-MM-DD
+    #[arg(long, value_name = "DATE")]
+    resolved_date_to: Option<String>,
+
+    /// 站点 URL
+    #[arg(long)]
+    url: Option<String>,
+
+    /// Chrome profile 路径
+    #[arg(long)]
+    profile: Option<String>,
+
+    /// 配置文件路径
+    #[arg(long)]
+    config: Option<String>,
+
+    /// 以 JSON 格式输出搜索结果
+    #[arg(long)]
+    json: bool,
+}
+
 pub fn run(args: Vec<OsString>) -> Result<()> {
     let cli = Cli::try_parse_from(std::iter::once(OsString::from("zentao")).chain(args))
         .map_err(|e| anyhow!(e.to_string()))?;
@@ -111,6 +146,7 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
         Commands::Chrome(args) => run_chrome(args),
         Commands::Bug(args) => run_bug(args),
         Commands::Image(args) => run_image(args),
+        Commands::Search(args) => run_search(args),
     }
 }
 
@@ -136,7 +172,8 @@ fn run_cookie(args: CookieArgs) -> Result<()> {
         .host_str()
         .ok_or_else(|| anyhow!("URL 缺少 host"))?
         .to_string();
-    let mut matched_domains: Vec<String> = cookie.items.iter().map(|it| it.domain.clone()).collect();
+    let mut matched_domains: Vec<String> =
+        cookie.items.iter().map(|it| it.domain.clone()).collect();
     matched_domains.sort();
     matched_domains.dedup();
 
@@ -204,9 +241,7 @@ fn run_chrome_profile(args: ProfileArgs) -> Result<()> {
     io::stdout().flush().ok();
 
     let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .context("读取输入失败")?;
+    io::stdin().read_line(&mut input).context("读取输入失败")?;
     let input = input.trim();
 
     if input.eq_ignore_ascii_case("q") {
@@ -214,7 +249,9 @@ fn run_chrome_profile(args: ProfileArgs) -> Result<()> {
         return Ok(());
     }
 
-    let index: usize = input.parse().map_err(|_| anyhow!("输入无效，请输入数字编号"))?;
+    let index: usize = input
+        .parse()
+        .map_err(|_| anyhow!("输入无效，请输入数字编号"))?;
     if index == 0 || index > profiles.len() {
         return Err(anyhow!("编号超出范围，请输入 1-{}", profiles.len()));
     }
@@ -238,6 +275,63 @@ fn run_image(args: ImageArgs) -> Result<()> {
     match args.command {
         ImageSubCommands::Download(d) => run_image_download(d),
     }
+}
+
+fn run_search(args: SearchArgs) -> Result<()> {
+    let cfg_path = resolve_config_path(args.config.as_deref())?;
+    let cfg = config::load_config_optional(&cfg_path)?;
+
+    let site_url = resolve_required(
+        args.url.as_deref(),
+        cfg.as_ref().map(|c| c.url.as_str()),
+        "url",
+    )?;
+
+    let profile = args
+        .profile
+        .as_deref()
+        .map(str::to_string)
+        .or_else(|| cfg.as_ref().and_then(|c| c.chrome_profile.clone()));
+
+    let api_client = ZentaoApi::new(&site_url, "v1")?;
+    let cookie = browser::load_zentao_cookie_from_chrome_macos(&site_url, profile.as_deref())?;
+
+    // Build field overrides from CLI args
+    let mut field_params: Vec<(String, String)> = Vec::new();
+
+    if let Some(ref user) = args.assigned_to {
+        field_params.push(("assignedTo".to_string(), user.clone()));
+    }
+    if let Some(ref date_from) = args.resolved_date_from {
+        field_params.push(("resolvedDate_from".to_string(), date_from.clone()));
+    }
+    if let Some(ref date_to) = args.resolved_date_to {
+        field_params.push(("resolvedDate_to".to_string(), date_to.clone()));
+    }
+
+    let html = api_client.search_bugs(
+        &cookie.cookie_header,
+        DEFAULT_SEARCH_PRODUCT_ID,
+        &field_params,
+    )?;
+
+    // DEBUG: dump raw HTML for diagnosis
+    if std::env::var("ZENTAO_DEBUG").is_ok() {
+        let debug_path = "/tmp/zentao-search-debug.html";
+        std::fs::write(debug_path, &html).ok();
+        eprintln!("[debug] 搜索结果 HTML 已写入 {}", debug_path);
+    }
+
+    let result = search::parse_search_result(&html)?;
+    let json = search::render_search_json(&result)?;
+    if args.json {
+        println!("{}", json);
+    } else {
+        let text =
+            search::render_search_lines_from_json_with_options(&json, args.assigned_to.is_some())?;
+        print!("{}", text);
+    }
+    Ok(())
 }
 
 fn run_bug_show(args: BugShowArgs) -> Result<()> {
@@ -387,10 +481,7 @@ fn resolve_required(from_cli: Option<&str>, from_cfg: Option<&str>, field: &str)
             return Ok(v.to_string());
         }
     }
-    Err(anyhow!(
-        "缺少 {}，请通过命令行参数或配置文件提供",
-        field
-    ))
+    Err(anyhow!("缺少 {}，请通过命令行参数或配置文件提供", field))
 }
 
 fn parse_bug_id_or_url(raw: &str) -> Result<u64> {

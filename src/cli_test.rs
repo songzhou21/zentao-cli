@@ -102,6 +102,20 @@ fn image_download_cli_requires_url() {
 }
 
 #[test]
+fn search_cli_parse_json_flag() {
+    let cli = Cli::try_parse_from(["zentao", "search", "--assigned-to", "zhousong", "--json"])
+        .expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(args.assigned_to.as_deref(), Some("zhousong"));
+            assert!(args.json);
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
 fn validate_image_url_accepts_http_https() {
     assert!(validate_image_url("http://example.com/a.png").is_ok());
     assert!(validate_image_url("https://example.com/a.png").is_ok());

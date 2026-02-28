@@ -10,6 +10,16 @@
 - 支持管理 Chrome Profile 并保存到 `config.json`
 - 支持按 Bug ID 抓取详情并输出 Markdown（正文图片地址自动补全）
 - 支持按图片 URL 直接下载到本地（`image download --url`）
+- 支持搜索 Bug（按指派者条件筛选，输出 Markdown 表格）
+
+## 搜索字段（当前支持）
+
+- `assigned_to`（指派给）
+
+## TODO（搜索字段）
+
+- 解决者
+- 解决日期
 
 ## 构建与运行
 
@@ -73,6 +83,12 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 # 8) 直接下载图片 URL 到本地
 ./target/release/zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
+
+# 9) 搜索指派给某人的 Bug
+./target/release/zentao search --assigned-to zhousong
+
+# 10) 输出 JSON（便于脚本消费）
+./target/release/zentao search --assigned-to zhousong --json
 ```
 
 ## 配置说明
@@ -94,6 +110,12 @@ cargo test bug::tests
 
 # 仅运行某个模块测试
 cargo test browser::tests
+
+# 仅运行搜索模块测试
+cargo test search::tests
+
+# 仅运行 API 模块测试（含 search form 构建）
+cargo test api::tests
 ```
 
 更多测试说明见 `docs/TESTING.md`。

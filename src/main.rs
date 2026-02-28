@@ -3,6 +3,7 @@ mod browser;
 mod bug;
 mod cli;
 mod config;
+mod search;
 
 use std::process::ExitCode;
 
