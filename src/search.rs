@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use regex::Regex;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
 
@@ -171,11 +172,19 @@ pub fn render_search_lines_from_json(
     let result: SearchResult =
         serde_json::from_str(json).map_err(|e| anyhow!("解析搜索 JSON 失败: {e}"))?;
 
+    let (total, unresolved) = summarize_counts(&result);
     if result.bugs.is_empty() {
-        return Ok("搜索结果为空。\n".to_string());
+        return Ok(format!(
+            "搜索到 {} 个 Bug，未解决 {} 个。\n搜索结果为空。\n",
+            total, unresolved
+        ));
     }
 
     let mut out = String::new();
+    out.push_str(&format!(
+        "搜索到 {} 个 Bug，未解决 {} 个。\n\n",
+        total, unresolved
+    ));
     for (idx, bug) in result.bugs.iter().enumerate() {
         let resolved_date = normalize_date_for_display(&bug.resolved_date);
         let deadline = normalize_date_for_display(&bug.deadline);
@@ -183,7 +192,7 @@ pub fn render_search_lines_from_json(
         out.push_str(&format!("{}. [{}] {}\n", idx + 1, bug.id, title.trim()));
         if hide_resolved_date {
             out.push_str(&format!(
-                "级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{}\n",
+                "\x1b[38;5;245m级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{}\x1b[0m\n",
                 bug.severity.trim(),
                 bug.opened_by.trim(),
                 bug.opened_date.trim(),
@@ -192,7 +201,7 @@ pub fn render_search_lines_from_json(
             ));
         } else {
             out.push_str(&format!(
-                "级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{} ｜ 解决日期：{}\n",
+                "\x1b[38;5;245m级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{} ｜ 解决日期：{}\x1b[0m\n",
                 bug.severity.trim(),
                 bug.opened_by.trim(),
                 bug.opened_date.trim(),
@@ -220,6 +229,37 @@ fn normalize_date_for_display(raw: &str) -> &str {
     } else {
         v
     }
+}
+
+fn summarize_counts(result: &SearchResult) -> (usize, usize) {
+    let (total_from_text, unresolved_from_text) = parse_total_summary(result.total.as_deref());
+    let total = total_from_text.unwrap_or(result.bugs.len());
+    let unresolved = unresolved_from_text.unwrap_or_else(|| {
+        result
+            .bugs
+            .iter()
+            .filter(|b| normalize_date_for_display(&b.resolved_date) == "--")
+            .count()
+    });
+    (total, unresolved)
+}
+
+fn parse_total_summary(total: Option<&str>) -> (Option<usize>, Option<usize>) {
+    let Some(text) = total else {
+        return (None, None);
+    };
+    let total_re = Regex::new(r"共\s*(\d+)\s*个\s*Bug").expect("valid total regex");
+    let unresolved_re = Regex::new(r"未解决\s*(\d+)").expect("valid unresolved regex");
+
+    let total_count = total_re
+        .captures(text)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<usize>().ok());
+    let unresolved_count = unresolved_re
+        .captures(text)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<usize>().ok());
+    (total_count, unresolved_count)
 }
 
 fn sel(css: &str) -> Selector {

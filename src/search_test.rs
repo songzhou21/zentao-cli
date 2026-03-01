@@ -169,10 +169,11 @@ fn render_search_lines_from_json_output() {
     let json = render_search_json(&result).expect("json should render");
     let text = render_search_lines_from_json(&json, false).expect("lines should render");
 
+    assert!(text.contains("搜索到 2 个 Bug，未解决 2 个。"));
     assert!(text.contains("1. [51276] 【系统测试】添加子社群"));
     assert!(text.contains("2. [48919] 【系统测试】PC登录后"));
-    assert!(text.contains("级别：3 ｜ 创建者：用户甲 02-24 15:43 ｜ 指派：用户乙 ｜ 截止日期：-- ｜ 解决日期：--"));
-    assert!(text.contains("级别：3 ｜ 创建者：用户甲 12-11 11:25 ｜ 指派：用户乙 ｜ 截止日期：2025-12-16 ｜ 解决日期：--"));
+    assert!(text.contains("\x1b[38;5;245m级别：3 ｜ 创建者：用户甲 02-24 15:43 ｜ 指派：用户乙 ｜ 截止日期：-- ｜ 解决日期：--\x1b[0m"));
+    assert!(text.contains("\x1b[38;5;245m级别：3 ｜ 创建者：用户甲 12-11 11:25 ｜ 指派：用户乙 ｜ 截止日期：2025-12-16 ｜ 解决日期：--\x1b[0m"));
 }
 
 #[test]
@@ -198,6 +199,7 @@ fn render_search_lines_zero_resolved_date_as_dash() {
 }"#;
 
     let text = render_search_lines_from_json(json, false).expect("lines should render");
+    assert!(text.contains("搜索到 1 个 Bug，未解决 1 个。"));
     assert!(text.contains("截止日期：-- ｜ 解决日期：--"));
 }
 
@@ -208,6 +210,57 @@ fn render_search_lines_hide_resolved_date_for_assigned_to() {
     let json = render_search_json(&result).expect("json should render");
     let text = render_search_lines_from_json(&json, true).expect("lines should render");
 
+    assert!(text.contains("搜索到 2 个 Bug，未解决 2 个。"));
     assert!(text.contains("截止日期：--"));
     assert!(!text.contains("解决日期："));
+}
+
+#[test]
+fn render_search_lines_summary_fallback_to_bug_rows() {
+    let json = r#"{
+  "bugs": [
+    {
+      "id": 1,
+      "severity": "2",
+      "pri": "2",
+      "confirmed": "否",
+      "title": "t1",
+      "status": "激活",
+      "opened_by": "a",
+      "opened_date": "02-28 18:32",
+      "assigned_to": "b",
+      "resolved_date": "",
+      "resolution": "",
+      "deadline": "0000-00-00"
+    },
+    {
+      "id": 2,
+      "severity": "2",
+      "pri": "2",
+      "confirmed": "否",
+      "title": "t2",
+      "status": "关闭",
+      "opened_by": "a",
+      "opened_date": "03-01 09:00",
+      "assigned_to": "b",
+      "resolved_date": "2026-03-01",
+      "resolution": "已解决",
+      "deadline": "2026-03-02"
+    }
+  ],
+  "total": "统计信息缺失"
+}"#;
+
+    let text = render_search_lines_from_json(json, false).expect("lines should render");
+    assert!(text.contains("搜索到 2 个 Bug，未解决 1 个。"));
+}
+
+#[test]
+fn render_search_lines_empty_with_summary() {
+    let json = r#"{
+  "bugs": [],
+  "total": null
+}"#;
+    let text = render_search_lines_from_json(json, false).expect("lines should render");
+    assert_eq!(text, "搜索到 0 个 Bug，未解决 0 个。\n搜索结果为空。\n");
 }
