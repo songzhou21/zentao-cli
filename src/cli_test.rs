@@ -110,6 +110,28 @@ fn search_cli_parse_json_flag() {
         Commands::Search(args) => {
             assert_eq!(args.assigned_to.as_deref(), Some("zhousong"));
             assert!(args.json);
+            assert_eq!(args.page_size, 20);
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn search_cli_parse_page_size() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "search",
+        "--assigned-to",
+        "zhousong",
+        "--page-size",
+        "200",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(args.assigned_to.as_deref(), Some("zhousong"));
+            assert_eq!(args.page_size, 200);
         }
         _ => panic!("unexpected command"),
     }
@@ -137,6 +159,18 @@ fn search_cli_parse_resolved_by_and_date_range() {
         }
         _ => panic!("unexpected command"),
     }
+}
+
+#[test]
+fn append_search_cookie_page_size_appends_cookie() {
+    let got = append_search_cookie_page_size("za=1; zentaosid=2", 1000);
+    assert_eq!(got, "za=1; zentaosid=2; pagerBugBrowse=1000");
+}
+
+#[test]
+fn append_search_cookie_page_size_handles_empty_base() {
+    let got = append_search_cookie_page_size("  ", 1000);
+    assert_eq!(got, "pagerBugBrowse=1000");
 }
 
 #[test]

@@ -161,6 +161,10 @@ struct SearchArgs {
     /// 以 JSON 格式输出搜索结果
     #[arg(long)]
     json: bool,
+
+    /// 每页显示条数（通过 Cookie pagerBugBrowse 传给禅道）
+    #[arg(long, value_name = "N", default_value_t = 20)]
+    page_size: u32,
 }
 
 pub fn run(args: Vec<OsString>) -> Result<()> {
@@ -392,6 +396,7 @@ fn run_search(args: SearchArgs) -> Result<()> {
 
     let api_client = ZentaoApi::new(&site_url, "v1")?;
     let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
+    let search_cookie_header = append_search_cookie_page_size(&cookie.cookie_header, args.page_size);
 
     // Build field overrides from CLI args
     let mut field_params: Vec<(String, String)> = Vec::new();
@@ -410,7 +415,7 @@ fn run_search(args: SearchArgs) -> Result<()> {
     }
 
     let html = api_client.search_bugs(
-        &cookie.cookie_header,
+        &search_cookie_header,
         DEFAULT_SEARCH_PRODUCT_ID,
         &field_params,
     )?;
@@ -608,6 +613,19 @@ fn resolve_required(from_cli: Option<&str>, from_cfg: Option<&str>, field: &str)
         }
     }
     Err(anyhow!("缺少 {}，请通过命令行参数或配置文件提供", field))
+}
+
+fn append_search_cookie_page_size(base_cookie: &str, page_size: u32) -> String {
+    let base = base_cookie.trim().trim_end_matches(';').trim();
+    if page_size > 0 {
+        if base.is_empty() {
+            format!("pagerBugBrowse={page_size}")
+        } else {
+            format!("{base}; pagerBugBrowse={page_size}")
+        }
+    } else {
+        base.to_string()
+    }
 }
 
 fn parse_bug_id_or_url(raw: &str) -> Result<u64> {

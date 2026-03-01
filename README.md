@@ -15,6 +15,7 @@
 - 支持按 Bug ID 抓取详情并输出 Markdown（正文图片地址自动补全）
 - 支持按图片 URL 直接下载到本地（`image download --url`）
 - 支持搜索 Bug（按指派者、解决者、解决日期范围筛选，输出文本列表）
+  - `search` 默认携带 `pagerBugBrowse=20`，可通过 `--page-size` 覆盖
 
 ## 搜索字段（当前支持）
 
@@ -102,11 +103,14 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # 9) 搜索指派给某人的 Bug
 ./target/release/zentao search --assigned-to zhousong
 
-# 10) 按解决者 + 解决日期范围搜索
+# 10) 指定每页条数（通过 cookie pagerBugBrowse=<N> 传给禅道）
+./target/release/zentao search --assigned-to zhousong --page-size 1000
+
+# 11) 按解决者 + 解决日期范围搜索
 ./target/release/zentao search --resolved-by zhousong \
   --resolved-date-from 2025-11-14 --resolved-date-to 2025-11-22
 
-# 11) 输出 JSON（便于脚本消费）
+# 12) 输出 JSON（便于脚本消费）
 ./target/release/zentao search --assigned-to zhousong --json
 ```
 
