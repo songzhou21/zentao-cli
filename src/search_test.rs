@@ -172,8 +172,10 @@ fn render_search_lines_from_json_output() {
     assert!(text.contains("搜索到 2 个 Bug，未解决 2 个。"));
     assert!(text.contains("1. [51276] 【系统测试】添加子社群"));
     assert!(text.contains("2. [48919] 【系统测试】PC登录后"));
-    assert!(text.contains("\x1b[38;5;245m级别：3 ｜ 创建者：用户甲 02-24 15:43 ｜ 指派：用户乙 ｜ 截止日期：-- ｜ 解决日期：--\x1b[0m"));
-    assert!(text.contains("\x1b[38;5;245m级别：3 ｜ 创建者：用户甲 12-11 11:25 ｜ 指派：用户乙 ｜ 截止日期：2025-12-16 ｜ 解决日期：--\x1b[0m"));
+    assert!(text.contains("\x1b[38;5;244m级别：3 ｜ 创建者：用户甲 02-24 15:43 ｜ 指派：用户乙 ｜ 截止日期：-- ｜ 解决日期：--\x1b[0m"));
+    assert!(text.contains("\x1b[38;5;244m级别：3 ｜ 创建者：用户甲 12-11 11:25 ｜ 指派：用户乙 ｜ 截止日期："));
+    assert!(text.contains("2025-12-16（"));
+    assert!(text.contains(" ｜ 解决日期：--\x1b[0m"));
 }
 
 #[test]
@@ -263,4 +265,76 @@ fn render_search_lines_empty_with_summary() {
 }"#;
     let text = render_search_lines_from_json(json, false).expect("lines should render");
     assert_eq!(text, "搜索到 0 个 Bug，未解决 0 个。\n搜索结果为空。\n");
+}
+
+#[test]
+fn render_search_lines_resolved_title_is_gray() {
+    let json = r#"{
+  "bugs": [
+    {
+      "id": 1,
+      "severity": "3",
+      "pri": "3",
+      "confirmed": "否",
+      "title": "未解决标题",
+      "status": "激活",
+      "opened_by": "a",
+      "opened_date": "03-01 10:00",
+      "assigned_to": "b",
+      "resolved_date": "",
+      "resolution": "",
+      "deadline": "0000-00-00"
+    },
+    {
+      "id": 2,
+      "severity": "3",
+      "pri": "3",
+      "confirmed": "否",
+      "title": "已解决标题",
+      "status": "已解决",
+      "opened_by": "a",
+      "opened_date": "03-01 10:01",
+      "assigned_to": "b",
+      "resolved_date": "2026-03-01",
+      "resolution": "已修复",
+      "deadline": "2026-03-10"
+    }
+  ],
+  "total": "本页共 2 个Bug，未解决 1。"
+}"#;
+    let text = render_search_lines_from_json(json, false).expect("lines should render");
+    assert!(text.contains("1. [1] 未解决标题"));
+    assert!(text.contains("\x1b[38;5;247m2. [2] 已解决标题\x1b[0m"));
+}
+
+#[test]
+fn format_deadline_for_display_overdue_and_highlight_flag() {
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 1).expect("valid date");
+    let (text, overdue) = format_deadline_for_display("2026-02-26", today);
+    assert_eq!(text, "2026-02-26（已过3天）");
+    assert!(overdue);
+}
+
+#[test]
+fn format_deadline_for_display_future_and_today() {
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 1).expect("valid date");
+    let (future_text, future_overdue) = format_deadline_for_display("2026-03-04", today);
+    assert_eq!(future_text, "2026-03-04（剩余3天）");
+    assert!(future_overdue);
+
+    let (today_text, today_overdue) = format_deadline_for_display("2026-03-01", today);
+    assert_eq!(today_text, "2026-03-01（今天）");
+    assert!(today_overdue);
+}
+
+#[test]
+fn format_deadline_for_display_highlight_within_7_days_inclusive() {
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 3, 1).expect("valid date");
+    let (d7_text, d7_highlight) = format_deadline_for_display("2026-03-08", today);
+    assert_eq!(d7_text, "2026-03-08（剩余7天）");
+    assert!(d7_highlight);
+
+    let (d8_text, d8_highlight) = format_deadline_for_display("2026-03-09", today);
+    assert_eq!(d8_text, "2026-03-09（剩余8天）");
+    assert!(!d8_highlight);
 }

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use chrono::{Local, NaiveDate};
 use regex::Regex;
 use scraper::{Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -171,6 +172,7 @@ pub fn render_search_lines_from_json(
 ) -> Result<String> {
     let result: SearchResult =
         serde_json::from_str(json).map_err(|e| anyhow!("解析搜索 JSON 失败: {e}"))?;
+    let today = Local::now().date_naive();
 
     let (total, unresolved) = summarize_counts(&result);
     if result.bugs.is_empty() {
@@ -187,26 +189,39 @@ pub fn render_search_lines_from_json(
     ));
     for (idx, bug) in result.bugs.iter().enumerate() {
         let resolved_date = normalize_date_for_display(&bug.resolved_date);
-        let deadline = normalize_date_for_display(&bug.deadline);
+        let (deadline_display, deadline_overdue) = format_deadline_for_display(&bug.deadline, today);
         let title = bug.title.replace('\n', " ").replace('\r', " ");
-        out.push_str(&format!("{}. [{}] {}\n", idx + 1, bug.id, title.trim()));
+        let deadline_segment = if deadline_overdue {
+            format!(
+                "截止日期：\x1b[1;31m{}\x1b[38;5;244m",
+                deadline_display
+            )
+        } else {
+            format!("截止日期：{}", deadline_display)
+        };
+        let title_line = format!("{}. [{}] {}", idx + 1, bug.id, title.trim());
+        if is_resolved_bug(bug) {
+            out.push_str(&format!("\x1b[38;5;247m{}\x1b[0m\n", title_line));
+        } else {
+            out.push_str(&format!("{title_line}\n"));
+        }
         if hide_resolved_date {
             out.push_str(&format!(
-                "\x1b[38;5;245m级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{}\x1b[0m\n",
+                "\x1b[38;5;244m级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ {}\x1b[0m\n",
                 bug.severity.trim(),
                 bug.opened_by.trim(),
                 bug.opened_date.trim(),
                 bug.assigned_to.trim(),
-                deadline,
+                deadline_segment,
             ));
         } else {
             out.push_str(&format!(
-                "\x1b[38;5;245m级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{} ｜ 解决日期：{}\x1b[0m\n",
+                "\x1b[38;5;244m级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ {} ｜ 解决日期：{}\x1b[0m\n",
                 bug.severity.trim(),
                 bug.opened_by.trim(),
                 bug.opened_date.trim(),
                 bug.assigned_to.trim(),
-                deadline,
+                deadline_segment,
                 resolved_date
             ));
         }
@@ -228,6 +243,28 @@ fn normalize_date_for_display(raw: &str) -> &str {
         "--"
     } else {
         v
+    }
+}
+
+fn format_deadline_for_display(raw: &str, today: NaiveDate) -> (String, bool) {
+    let deadline = normalize_date_for_display(raw).to_string();
+    if deadline == "--" {
+        return (deadline, false);
+    }
+
+    let parsed = match NaiveDate::parse_from_str(&deadline, "%Y-%m-%d") {
+        Ok(v) => v,
+        Err(_) => return (deadline, false),
+    };
+    let delta = (parsed - today).num_days();
+    if delta < 0 {
+        (format!("{}（已过{}天）", deadline, -delta), true)
+    } else if delta == 0 {
+        (format!("{}（今天）", deadline), true)
+    } else if delta <= 7 {
+        (format!("{}（剩余{}天）", deadline, delta), true)
+    } else {
+        (format!("{}（剩余{}天）", deadline, delta), false)
     }
 }
 
@@ -260,6 +297,10 @@ fn parse_total_summary(total: Option<&str>) -> (Option<usize>, Option<usize>) {
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse::<usize>().ok());
     (total_count, unresolved_count)
+}
+
+fn is_resolved_bug(bug: &BugRow) -> bool {
+    normalize_date_for_display(&bug.resolved_date) != "--"
 }
 
 fn sel(css: &str) -> Selector {
