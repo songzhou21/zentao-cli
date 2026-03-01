@@ -1,16 +1,40 @@
 use anyhow::{anyhow, Context, Result};
+use crate::browser::BrowserCookieItem;
+use regex::Regex;
 use reqwest::blocking::Client;
+use reqwest::header::{HeaderMap, SET_COOKIE};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ZentaoApi {
     site_url: String,
     client: Client,
 }
 
+#[derive(Debug, Clone)]
+pub struct LoginResult {
+    pub cookies: Vec<BrowserCookieItem>,
+    pub login_response_body: String,
+    pub set_cookies_by_url: Vec<(String, Vec<String>)>,
+}
+
 impl ZentaoApi {
     pub fn new(site_url: &str, _api_version: &str) -> Result<Self> {
-        let client = Client::builder()
-            .build()
-            .context("初始化 HTTP 客户端失败")?;
+        Self::new_with_proxy(site_url, _api_version, None)
+    }
+
+    pub fn new_with_proxy(site_url: &str, _api_version: &str, proxy: Option<&str>) -> Result<Self> {
+        let mut builder = Client::builder().cookie_store(true);
+        if let Some(p) = proxy {
+            let p = p.trim();
+            if !p.is_empty() {
+                builder = builder
+                    .no_proxy()
+                    .proxy(reqwest::Proxy::all(p).with_context(|| format!("代理配置无效: {}", p))?);
+            }
+        }
+        let client = builder.build().context("初始化 HTTP 客户端失败")?;
         Ok(Self {
             site_url: site_url.trim_end_matches('/').to_string(),
             client,
@@ -167,6 +191,252 @@ impl ZentaoApi {
 
         Ok((final_url, body))
     }
+
+    pub fn login_with_password(
+        &self,
+        username: &str,
+        password: &str,
+        keep_login: bool,
+    ) -> Result<LoginResult> {
+        let login_page_url = format!("{}/user-login-L3plbnRhby8=.html", self.site_url);
+        let login_url = format!("{}/user-login.html", self.site_url);
+        let my_url = format!("{}/my/", self.site_url);
+        let target_host = reqwest::Url::parse(&self.site_url)
+            .context("解析站点 URL 失败")?
+            .host_str()
+            .ok_or_else(|| anyhow!("站点 URL 缺少 host"))?
+            .to_string();
+
+        let mut cookie_map: HashMap<String, BrowserCookieItem> = HashMap::new();
+        let mut set_cookies_by_url: Vec<(String, Vec<String>)> = Vec::new();
+
+        let page_resp = self
+            .client
+            .get(&login_page_url)
+            .send()
+            .with_context(|| format!("请求登录页失败: {}", login_page_url))?;
+        let page_headers = page_resp.headers().clone();
+        let page_html = page_resp.text().context("读取登录页失败")?;
+        let set_cookie_page = collect_set_cookie_lines(&page_headers);
+        merge_cookie_items(&mut cookie_map, parse_set_cookie_items(&set_cookie_page, &target_host)?);
+        set_cookies_by_url.push((login_page_url.clone(), set_cookie_page));
+
+        let verify_rand = parse_verify_rand(&page_html)?;
+        let password_hash = md5_hex(&format!("{}{}", md5_hex(password), verify_rand));
+
+        let mut form = vec![
+            ("account", username.to_string()),
+            ("password", password_hash),
+            ("passwordStrength", "2".to_string()),
+            ("referer", "/zentao/".to_string()),
+            ("verifyRand", verify_rand),
+            (
+                "keepLogin",
+                if keep_login { "1" } else { "0" }.to_string(),
+            ),
+        ];
+        if keep_login {
+            form.push(("keepLogin[]", "on".to_string()));
+        }
+
+        let login_resp = self
+            .client
+            .post(&login_url)
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header(
+                "Content-Type",
+                "application/x-www-form-urlencoded; charset=UTF-8",
+            )
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Origin", site_origin(&self.site_url)?)
+            .header("Referer", &login_url)
+            .form(&form)
+            .send()
+            .with_context(|| format!("登录请求失败: {}", login_url))?;
+        let login_headers = login_resp.headers().clone();
+        let login_response_body = login_resp.text().context("读取登录响应失败")?;
+        if !login_response_body.contains("\"result\":\"success\"") {
+            return Err(anyhow!("登录失败: {}", summarize_login_response(&login_response_body)));
+        }
+        let set_cookie_login = collect_set_cookie_lines(&login_headers);
+        merge_cookie_items(
+            &mut cookie_map,
+            parse_set_cookie_items(&set_cookie_login, &target_host)?,
+        );
+        set_cookies_by_url.push((login_url.clone(), set_cookie_login));
+
+        let my_resp = self
+            .client
+            .get(&my_url)
+            .send()
+            .with_context(|| format!("请求登录后页面失败: {}", my_url))?;
+        let my_headers = my_resp.headers().clone();
+        let final_url = my_resp.url().to_string();
+        let my_html = my_resp.text().context("读取登录后页面失败")?;
+        if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
+            return Err(anyhow!("登录后校验失败: 跳转到登录页"));
+        }
+        if my_html.trim().is_empty() {
+            return Err(anyhow!("登录后校验失败: 页面内容为空"));
+        }
+        let set_cookie_my = collect_set_cookie_lines(&my_headers);
+        merge_cookie_items(&mut cookie_map, parse_set_cookie_items(&set_cookie_my, &target_host)?);
+        set_cookies_by_url.push((my_url, set_cookie_my));
+
+        let mut cookies: Vec<BrowserCookieItem> = cookie_map.into_values().collect();
+        cookies.sort_by(|a, b| a.name.cmp(&b.name));
+        if cookies.is_empty() {
+            return Err(anyhow!("登录成功但未捕获到任何 cookie"));
+        }
+
+        Ok(LoginResult {
+            cookies,
+            login_response_body,
+            set_cookies_by_url,
+        })
+    }
+}
+
+fn collect_set_cookie_lines(headers: &HeaderMap) -> Vec<String> {
+    headers
+        .get_all(SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn parse_set_cookie_items(lines: &[String], default_host: &str) -> Result<Vec<BrowserCookieItem>> {
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| anyhow!("系统时间错误"))?
+        .as_secs() as i64;
+    let now_chrome = unix_to_chrome_expires_utc(now_secs);
+    let mut out = Vec::new();
+
+    for line in lines {
+        let mut parts = line.split(';').map(str::trim);
+        let first = match parts.next() {
+            Some(v) => v,
+            None => continue,
+        };
+        let (name, value) = match first.split_once('=') {
+            Some((k, v)) => (k.trim(), v.trim()),
+            None => continue,
+        };
+        if name.is_empty() {
+            continue;
+        }
+
+        let mut domain = default_host.to_string();
+        let mut path = "/".to_string();
+        let mut secure = false;
+        let mut http_only = false;
+        let mut expires_utc = 0_i64;
+
+        for attr in parts {
+            let lower = attr.to_ascii_lowercase();
+            if lower == "secure" {
+                secure = true;
+                continue;
+            }
+            if lower == "httponly" {
+                http_only = true;
+                continue;
+            }
+            if let Some((k, v)) = attr.split_once('=') {
+                let key = k.trim().to_ascii_lowercase();
+                let val = v.trim();
+                match key.as_str() {
+                    "domain" if !val.is_empty() => domain = val.to_string(),
+                    "path" if !val.is_empty() => path = val.to_string(),
+                    "max-age" => {
+                        if let Ok(sec) = val.parse::<i64>() {
+                            expires_utc = unix_to_chrome_expires_utc(now_secs + sec.max(0));
+                        }
+                    }
+                    "expires" => {
+                        let _ = val;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        out.push(BrowserCookieItem {
+            name: name.to_string(),
+            value: value.to_string(),
+            domain,
+            path,
+            secure,
+            http_only,
+            expires_utc,
+            creation_utc: now_chrome,
+            last_access_utc: now_chrome,
+        });
+    }
+
+    Ok(out)
+}
+
+fn merge_cookie_items(
+    target: &mut HashMap<String, BrowserCookieItem>,
+    incoming: Vec<BrowserCookieItem>,
+) {
+    for item in incoming {
+        target.insert(item.name.clone(), item);
+    }
+}
+
+fn parse_verify_rand(html: &str) -> Result<String> {
+    let re = Regex::new(r#"name=['"]verifyRand['"][^>]*value=['"](\d+)['"]"#)
+        .context("初始化 verifyRand 正则失败")?;
+    let v = re
+        .captures(html)
+        .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+        .ok_or_else(|| anyhow!("登录页缺少 verifyRand"))?;
+    Ok(v)
+}
+
+fn md5_hex(input: &str) -> String {
+    format!("{:x}", md5::compute(input.as_bytes()))
+}
+
+fn unix_to_chrome_expires_utc(unix_secs: i64) -> i64 {
+    (unix_secs + 11_644_473_600_i64) * 1_000_000_i64
+}
+
+fn site_origin(site_url: &str) -> Result<String> {
+    let parsed = reqwest::Url::parse(site_url).context("解析站点 URL 失败")?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| anyhow!("站点 URL 缺少 host"))?;
+    match parsed.port() {
+        Some(port) => Ok(format!("{}://{}:{}", parsed.scheme(), host, port)),
+        None => Ok(format!("{}://{}", parsed.scheme(), host)),
+    }
+}
+
+fn summarize_login_response(raw: &str) -> String {
+    if let Ok(v) = serde_json::from_str::<Value>(raw) {
+        let result = v.get("result").and_then(Value::as_str).unwrap_or("");
+        let message = v.get("message").and_then(Value::as_str).unwrap_or("");
+        let locate = v.get("locate").and_then(Value::as_str).unwrap_or("");
+        let mut parts = Vec::new();
+        if !result.is_empty() {
+            parts.push(format!("result={}", result));
+        }
+        if !message.is_empty() {
+            parts.push(format!("message={}", message));
+        }
+        if !locate.is_empty() {
+            parts.push(format!("locate={}", locate));
+        }
+        if !parts.is_empty() {
+            return parts.join(", ");
+        }
+    }
+    raw.to_string()
 }
 
 /// Build the full form body for zentao search-buildQuery.

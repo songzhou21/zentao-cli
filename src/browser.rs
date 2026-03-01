@@ -4,6 +4,7 @@ use cbc::Decryptor;
 use cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use pbkdf2::pbkdf2_hmac_array;
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::cmp::Reverse;
 use std::fs;
@@ -13,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 use url::Url;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserCookieItem {
     pub name: String,
     pub value: String,

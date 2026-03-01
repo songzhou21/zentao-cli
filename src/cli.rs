@@ -2,12 +2,15 @@ use crate::api::ZentaoApi;
 use crate::browser;
 use crate::bug;
 use crate::config;
+use crate::config::CookieSource;
+use crate::cookie_store;
 use crate::search;
 use anyhow::{anyhow, Context, Result};
 use chrono::{TimeZone, Utc};
 use clap::{Args, Parser, Subcommand};
 use regex::Regex;
 use reqwest::Url;
+use serde_json::Value;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
@@ -26,6 +29,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Cookie(CookieArgs),
+    Login(LoginArgs),
     Chrome(ChromeArgs),
     Bug(BugArgs),
     Image(ImageArgs),
@@ -42,6 +46,24 @@ struct CookieArgs {
     verify: bool,
     #[arg(long, default_value = "v1")]
     api_version: String,
+    #[arg(long)]
+    config: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct LoginArgs {
+    #[arg(long)]
+    url: Option<String>,
+    #[arg(long)]
+    username: String,
+    #[arg(long)]
+    password: String,
+    #[arg(long, default_value = "v1")]
+    api_version: String,
+    #[arg(long)]
+    cookie_file: Option<String>,
+    #[arg(long)]
+    proxy: Option<String>,
     #[arg(long)]
     config: Option<String>,
 }
@@ -147,6 +169,7 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
 
     match cli.command {
         Commands::Cookie(args) => run_cookie(args),
+        Commands::Login(args) => run_login(args),
         Commands::Chrome(args) => run_chrome(args),
         Commands::Bug(args) => run_bug(args),
         Commands::Image(args) => run_image(args),
@@ -170,7 +193,7 @@ fn run_cookie(args: CookieArgs) -> Result<()> {
         .map(str::to_string)
         .or_else(|| cfg.as_ref().and_then(|c| c.chrome_profile.clone()));
 
-    let cookie = browser::load_zentao_cookie_from_chrome_macos(&site_url, profile.as_deref())?;
+    let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
     let parsed_site = reqwest::Url::parse(&site_url).context("解析 URL 失败")?;
     let target_host = parsed_site
         .host_str()
@@ -181,33 +204,103 @@ fn run_cookie(args: CookieArgs) -> Result<()> {
     matched_domains.sort();
     matched_domains.dedup();
 
-    let expiry = cookie
-        .items
-        .first()
-        .map(|it| format_cookie_expiry(it.expires_utc))
-        .unwrap_or_else(|| "unknown".to_string());
-    println!("Chrome profile: {}", cookie.profile_path);
+    println!("Cookie source: {}", cookie.profile_path);
     println!("目标域名: {}", target_host);
-    println!("命中 cookie 域名: {}", matched_domains.join(", "));
-    println!("\x1b[1;33m过期时间: {}\x1b[0m", expiry);
-    println!("浏览器 cookie 明细:");
-
-    for item in &cookie.items {
-        println!(
-            "- {}: value={}, domain={}, path={}, secure={}, httpOnly={}",
-            item.name, item.value, item.domain, item.path, item.secure, item.http_only
-        );
+    println!();
+    println!("cookie 域名: {}", format_cookie_domains_line(&matched_domains));
+    println!();
+    println!("cookie 状态:");
+    print_cookie_presence(&cookie.items, "zentaosid");
+    print_cookie_presence(&cookie.items, "za");
+    print_cookie_presence(&cookie.items, "zp");
+    print_cookie_presence(&cookie.items, "keepLogin");
+    println!();
+    println!("cookie 明细:");
+    let rows = collect_cookie_table_rows(&cookie.items);
+    for line in render_cookie_table(&rows) {
+        println!("{}", line);
     }
 
     if args.verify {
         let client = ZentaoApi::new(&site_url, &args.api_version)?;
         match client.verify_cookie(&cookie.cookie_header) {
-            Ok(final_url) => println!("\x1b[1;32mcookie 校验成功，最终跳转: {}\x1b[0m", final_url),
-            Err(err) => return Err(err),
+            Ok(final_url) => println!(
+                "\n\x1b[1;32mcookie 校验成功，最终跳转: {}\x1b[0m",
+                final_url
+            ),
+            Err(err) => {
+                return Err(anyhow!("\x1b[1;31mcookie 校验失败: {}\x1b[0m", err));
+            }
         }
     }
 
     Ok(())
+}
+
+fn run_login(args: LoginArgs) -> Result<()> {
+    let cfg_path = resolve_config_path(args.config.as_deref())?;
+    let cfg = config::load_or_default(&cfg_path)?;
+    let site_url = resolve_required(
+        args.url.as_deref(),
+        if cfg.url.is_empty() {
+            None
+        } else {
+            Some(cfg.url.as_str())
+        },
+        "url",
+    )?;
+
+    let api = ZentaoApi::new_with_proxy(&site_url, &args.api_version, args.proxy.as_deref())?;
+    let login = api.login_with_password(&args.username, &args.password, true)?;
+    let persist_items = select_persist_cookie_items(&login.cookies);
+
+    let cookie_file_path = resolve_cookie_file_path(args.cookie_file.as_deref())?;
+    cookie_store::save_cookie_file(&cookie_file_path, &site_url, &persist_items)?;
+
+    let parsed_login = parse_login_response(&login.login_response_body);
+    match parsed_login.result.as_deref() {
+        Some("success") => println!(
+            "\x1b[1;32m登录成功，cookie 已保存: {}\x1b[0m",
+            cookie_file_path.display()
+        ),
+        Some("fail") => println!("\x1b[1;31m登录失败\x1b[0m"),
+        _ => println!("登录响应: {}", format_login_response(&login.login_response_body)),
+    }
+    if let Some(message) = parsed_login.message.as_deref() {
+        if !message.is_empty() {
+            println!("服务端消息: {}", message);
+        }
+    }
+    println!();
+    println!("Set-Cookie:");
+    for (url, cookies) in &login.set_cookies_by_url {
+        if url.ends_with("/my/") {
+            continue;
+        }
+        println!("- \x1b[1;36m{}\x1b[0m", url);
+        let mut printed = 0usize;
+        for line in cookies {
+            if is_target_set_cookie(line) {
+                println!("  {}", line);
+                printed += 1;
+            }
+        }
+        if printed == 0 {
+            println!("  (none)");
+        }
+    }
+    Ok(())
+}
+
+fn select_persist_cookie_items(items: &[browser::BrowserCookieItem]) -> Vec<browser::BrowserCookieItem> {
+    let wanted = ["keepLogin", "za", "zp", "zentaosid"];
+    let mut out = Vec::new();
+    for name in wanted {
+        if let Some(item) = items.iter().find(|it| it.name == name) {
+            out.push(item.clone());
+        }
+    }
+    out
 }
 
 fn run_chrome(args: ChromeArgs) -> Result<()> {
@@ -298,7 +391,7 @@ fn run_search(args: SearchArgs) -> Result<()> {
         .or_else(|| cfg.as_ref().and_then(|c| c.chrome_profile.clone()));
 
     let api_client = ZentaoApi::new(&site_url, "v1")?;
-    let cookie = browser::load_zentao_cookie_from_chrome_macos(&site_url, profile.as_deref())?;
+    let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
 
     // Build field overrides from CLI args
     let mut field_params: Vec<(String, String)> = Vec::new();
@@ -358,7 +451,7 @@ fn run_bug_show(args: BugShowArgs) -> Result<()> {
         .or_else(|| cfg.as_ref().and_then(|c| c.chrome_profile.clone()));
 
     let api_client = ZentaoApi::new(&site_url, "v1")?;
-    let cookie = browser::load_zentao_cookie_from_chrome_macos(&site_url, profile.as_deref())?;
+    let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
     let (final_url, html) = api_client.fetch_bug_html(bug_id, &cookie.cookie_header)?;
 
     let detail = bug::parse_bug_detail(&final_url, &html)?;
@@ -474,6 +567,33 @@ fn download_single_image(url: &Url, out: &Path) -> Result<()> {
     Ok(())
 }
 
+fn load_cookie_for_site(
+    site_url: &str,
+    profile_override: Option<&str>,
+    cfg: Option<&config::Config>,
+) -> Result<browser::BrowserCookieResult> {
+    let source = cfg
+        .map(|c| c.cookie_source.clone())
+        .unwrap_or(CookieSource::Chrome);
+    match source {
+        CookieSource::Chrome => browser::load_zentao_cookie_from_chrome_macos(site_url, profile_override),
+        CookieSource::File => {
+            let path = resolve_cookie_file_path(None)?;
+            cookie_store::load_cookie_from_file(site_url, &path)
+        }
+    }
+}
+
+fn resolve_cookie_file_path(cli_path: Option<&str>) -> Result<PathBuf> {
+    if let Some(v) = cli_path {
+        let t = v.trim();
+        if !t.is_empty() {
+            return Ok(PathBuf::from(t));
+        }
+    }
+    config::default_cookie_file_path()
+}
+
 fn resolve_required(from_cli: Option<&str>, from_cfg: Option<&str>, field: &str) -> Result<String> {
     if let Some(v) = from_cli {
         let v = v.trim();
@@ -536,6 +656,196 @@ fn format_cookie_expiry(expires_utc: i64) -> String {
 
 fn chrome_expires_utc_to_unix(expires_utc: i64) -> i64 {
     browser::chrome_expires_utc_to_unix(expires_utc)
+}
+
+#[derive(Debug, Clone)]
+struct CookieTableRow {
+    name: String,
+    value: String,
+    domain: String,
+    path: String,
+    secure: String,
+    http_only: String,
+    expires: String,
+}
+
+fn collect_cookie_table_rows(items: &[browser::BrowserCookieItem]) -> Vec<CookieTableRow> {
+    let order = ["zentaosid", "za", "zp", "keepLogin"];
+    let mut out = Vec::new();
+    for name in order {
+        if let Some(it) = items.iter().find(|v| v.name == name && !v.value.is_empty()) {
+            out.push(CookieTableRow {
+                name: it.name.clone(),
+                value: it.value.clone(),
+                domain: it.domain.clone(),
+                path: it.path.clone(),
+                secure: it.secure.to_string(),
+                http_only: it.http_only.to_string(),
+                expires: format_cookie_expiry(it.expires_utc),
+            });
+        }
+    }
+    out
+}
+
+fn render_cookie_table(rows: &[CookieTableRow]) -> Vec<String> {
+    let headers = [
+        "name", "value", "domain", "path", "secure", "httpOnly", "expires",
+    ];
+    let mut w_name = headers[0].len();
+    let mut w_value = headers[1].len();
+    let mut w_domain = headers[2].len();
+    let mut w_path = headers[3].len();
+    let mut w_secure = headers[4].len();
+    let mut w_http_only = headers[5].len();
+    let mut w_expires = headers[6].len();
+
+    for r in rows {
+        w_name = w_name.max(r.name.len());
+        w_value = w_value.max(r.value.len());
+        w_domain = w_domain.max(r.domain.len());
+        w_path = w_path.max(r.path.len());
+        w_secure = w_secure.max(r.secure.len());
+        w_http_only = w_http_only.max(r.http_only.len());
+        w_expires = w_expires.max(r.expires.len());
+    }
+
+    let fmt = |name: &str,
+               value: &str,
+               domain: &str,
+               path: &str,
+               secure: &str,
+               http_only: &str,
+               expires: &str| {
+        format!(
+            "{:<w_name$}  {:<w_value$}  {:<w_domain$}  {:<w_path$}  {:<w_secure$}  {:<w_http_only$}  {:<w_expires$}",
+            name,
+            value,
+            domain,
+            path,
+            secure,
+            http_only,
+            expires,
+            w_name = w_name,
+            w_value = w_value,
+            w_domain = w_domain,
+            w_path = w_path,
+            w_secure = w_secure,
+            w_http_only = w_http_only,
+            w_expires = w_expires
+        )
+    };
+
+    let mut lines = Vec::new();
+    let header = fmt(
+        headers[0], headers[1], headers[2], headers[3], headers[4], headers[5], headers[6],
+    );
+    let sep = format!(
+        "{:-<w_name$}  {:-<w_value$}  {:-<w_domain$}  {:-<w_path$}  {:-<w_secure$}  {:-<w_http_only$}  {:-<w_expires$}",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        w_name = w_name,
+        w_value = w_value,
+        w_domain = w_domain,
+        w_path = w_path,
+        w_secure = w_secure,
+        w_http_only = w_http_only,
+        w_expires = w_expires
+    );
+    lines.push(format!("\x1b[1m{}\x1b[0m", header));
+    lines.push(sep);
+    for r in rows {
+        lines.push(fmt(
+            &r.name,
+            &r.value,
+            &r.domain,
+            &r.path,
+            &r.secure,
+            &r.http_only,
+            &r.expires,
+        ));
+    }
+    lines
+}
+
+fn format_login_response(raw: &str) -> String {
+    let parsed = parse_login_response(raw);
+    if parsed.result.is_some() || parsed.message.is_some() || parsed.locate.is_some() {
+        let mut parts = Vec::new();
+        if let Some(v) = parsed.result {
+            if !v.is_empty() {
+                parts.push(format!("result={}", v));
+            }
+        }
+        if let Some(v) = parsed.message {
+            if !v.is_empty() {
+                parts.push(format!("message={}", v));
+            }
+        }
+        if let Some(v) = parsed.locate {
+            if !v.is_empty() {
+                parts.push(format!("locate={}", v));
+            }
+        }
+        return parts.join(", ");
+    }
+    raw.to_string()
+}
+
+#[derive(Debug, Default)]
+struct ParsedLoginResponse {
+    result: Option<String>,
+    message: Option<String>,
+    locate: Option<String>,
+}
+
+fn parse_login_response(raw: &str) -> ParsedLoginResponse {
+    if let Ok(v) = serde_json::from_str::<Value>(raw) {
+        return ParsedLoginResponse {
+            result: v
+                .get("result")
+                .and_then(Value::as_str)
+                .map(std::string::ToString::to_string),
+            message: v
+                .get("message")
+                .and_then(Value::as_str)
+                .map(std::string::ToString::to_string),
+            locate: v
+                .get("locate")
+                .and_then(Value::as_str)
+                .map(std::string::ToString::to_string),
+        };
+    }
+    ParsedLoginResponse::default()
+}
+
+fn is_target_set_cookie(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.starts_with("zentaosid=")
+        || lower.starts_with("zp=")
+        || lower.starts_with("za=")
+        || lower.starts_with("keeplogin=")
+}
+
+fn print_cookie_presence(items: &[browser::BrowserCookieItem], name: &str) {
+    let exists = items.iter().any(|it| it.name == name && !it.value.is_empty());
+    if exists {
+        println!("- {}: \x1b[1;32m[OK]\x1b[0m", name);
+    } else {
+        println!("- {}: \x1b[1;31m[MISSING]\x1b[0m", name);
+    }
+}
+
+fn format_cookie_domains_line(domains: &[String]) -> String {
+    if domains.is_empty() {
+        return "\x1b[1;31m(none) [MISSING]\x1b[0m".to_string();
+    }
+    format!("{} \x1b[1;32m[OK]\x1b[0m", domains.join(", "))
 }
 
 #[cfg(test)]

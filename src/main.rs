@@ -3,6 +3,7 @@ mod browser;
 mod bug;
 mod cli;
 mod config;
+mod cookie_store;
 mod search;
 
 use std::process::ExitCode;

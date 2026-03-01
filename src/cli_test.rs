@@ -140,6 +140,41 @@ fn search_cli_parse_resolved_by_and_date_range() {
 }
 
 #[test]
+fn login_cli_parse_required_fields() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "login",
+        "--url",
+        "http://example.com/zentao",
+        "--username",
+        "alice",
+        "--password",
+        "secret",
+        "--proxy",
+        "socks5h://127.0.0.1:1080",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Login(args) => {
+            assert_eq!(args.url.as_deref(), Some("http://example.com/zentao"));
+            assert_eq!(args.username, "alice");
+            assert_eq!(args.password, "secret");
+            assert_eq!(args.proxy.as_deref(), Some("socks5h://127.0.0.1:1080"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn format_login_response_decodes_unicode_message() {
+    let raw = r#"{"result":"fail","message":"\u60a8\u8fd8\u67093\u6b21\u5c1d\u8bd5\u673a\u4f1a\u3002"}"#;
+    let got = format_login_response(raw);
+    assert!(got.contains("result=fail"));
+    assert!(got.contains("您还有3次尝试机会。"));
+}
+
+#[test]
 fn validate_image_url_accepts_http_https() {
     assert!(validate_image_url("http://example.com/a.png").is_ok());
     assert!(validate_image_url("https://example.com/a.png").is_ok());
@@ -196,6 +231,92 @@ fn download_single_image_http_error() {
     assert!(err.to_string().contains("下载失败: HTTP 404"));
 
     handle.join().expect("server thread");
+}
+
+#[test]
+fn collect_cookie_table_rows_filters_and_orders_target_cookies() {
+    let items = vec![
+        browser::BrowserCookieItem {
+            name: "lang".to_string(),
+            value: "zh-cn".to_string(),
+            domain: "example.com".to_string(),
+            path: "/".to_string(),
+            secure: false,
+            http_only: false,
+            expires_utc: 0,
+            creation_utc: 0,
+            last_access_utc: 0,
+        },
+        browser::BrowserCookieItem {
+            name: "zp".to_string(),
+            value: "zp-value".to_string(),
+            domain: "example.com".to_string(),
+            path: "/zentao/".to_string(),
+            secure: false,
+            http_only: true,
+            expires_utc: 0,
+            creation_utc: 0,
+            last_access_utc: 0,
+        },
+        browser::BrowserCookieItem {
+            name: "za".to_string(),
+            value: "zhousong".to_string(),
+            domain: "example.com".to_string(),
+            path: "/zentao/".to_string(),
+            secure: false,
+            http_only: true,
+            expires_utc: 0,
+            creation_utc: 0,
+            last_access_utc: 0,
+        },
+        browser::BrowserCookieItem {
+            name: "zentaosid".to_string(),
+            value: "sid".to_string(),
+            domain: "example.com".to_string(),
+            path: "/".to_string(),
+            secure: false,
+            http_only: true,
+            expires_utc: 0,
+            creation_utc: 0,
+            last_access_utc: 0,
+        },
+        browser::BrowserCookieItem {
+            name: "keepLogin".to_string(),
+            value: "on".to_string(),
+            domain: "example.com".to_string(),
+            path: "/zentao/".to_string(),
+            secure: false,
+            http_only: true,
+            expires_utc: 0,
+            creation_utc: 0,
+            last_access_utc: 0,
+        },
+    ];
+
+    let rows = collect_cookie_table_rows(&items);
+    let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
+    assert_eq!(names, vec!["zentaosid", "za", "zp", "keepLogin"]);
+}
+
+#[test]
+fn render_cookie_table_contains_header_and_session_expiry() {
+    let rows = vec![CookieTableRow {
+        name: "zentaosid".to_string(),
+        value: "sid".to_string(),
+        domain: "example.com".to_string(),
+        path: "/".to_string(),
+        secure: "false".to_string(),
+        http_only: "true".to_string(),
+        expires: "session".to_string(),
+    }];
+
+    let lines = render_cookie_table(&rows);
+    assert!(!lines.is_empty());
+    assert!(lines[0].contains("name"));
+    assert!(lines[0].contains("httpOnly"));
+    assert!(lines[0].contains("expires"));
+    assert!(lines[1].contains("zentaosid"));
+    assert!(lines[1].contains("session"));
 }
 
 fn spawn_once_server(status: u16, body: &'static [u8]) -> (Url, thread::JoinHandle<()>) {

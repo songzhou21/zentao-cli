@@ -86,6 +86,14 @@ fn trim_site_url() {
     assert_eq!(api.site_url, "http://example.com");
 }
 
+#[test]
+fn summarize_login_response_decodes_unicode_message() {
+    let raw = r#"{"result":"fail","message":"\u60a8\u8fd8\u67091\u6b21\u5c1d\u8bd5\u673a\u4f1a\u3002"}"#;
+    let got = summarize_login_response(raw);
+    assert!(got.contains("result=fail"));
+    assert!(got.contains("您还有1次尝试机会。"));
+}
+
 // VerifyCookie 访问 my-profile 页面，应覆盖无跳转成功、登录跳转、非预期跳转和 HTTP 非 2xx。
 #[test]
 fn verify_cookie_table_cases() {

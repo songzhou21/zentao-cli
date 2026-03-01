@@ -18,6 +18,7 @@ fn save_and_load_config() {
     let cfg = Config {
         url: "http://example.com/zentao".to_string(),
         chrome_profile: Some("/tmp/profile".to_string()),
+        cookie_source: CookieSource::File,
     };
     save_config(&path, &cfg).expect("save should succeed");
 
@@ -38,6 +39,7 @@ fn load_optional_and_default_when_missing() {
     let got = load_or_default(&missing).expect("default load should succeed");
     assert!(got.url.is_empty());
     assert!(got.chrome_profile.is_none());
+    assert_eq!(got.cookie_source, CookieSource::File);
 }
 
 // 非法 JSON 应返回“配置文件存在但无法解析”错误。
@@ -65,4 +67,19 @@ fn save_config_skips_empty_fields() {
 
     let raw = std::fs::read_to_string(Path::new(&path)).expect("read should succeed");
     assert_eq!(raw.trim(), "{}");
+}
+
+#[test]
+fn cookie_source_file_roundtrip() {
+    let dir = tempfile::tempdir().expect("temp dir should create");
+    let path = dir.path().join("config.json");
+
+    let cfg = Config {
+        cookie_source: CookieSource::File,
+        ..Config::default()
+    };
+    save_config(&path, &cfg).expect("save should succeed");
+
+    let loaded = load_config(&path).expect("load should succeed");
+    assert_eq!(loaded.cookie_source, CookieSource::File);
 }

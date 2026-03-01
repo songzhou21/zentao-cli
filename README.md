@@ -1,10 +1,14 @@
 # zentao-cli (Rust)
 
-禅道 CLI 工具，当前以 Chrome（macOS）中的登录会话 Cookie 为认证来源。
+禅道 CLI 工具，支持两种 Cookie 来源：`file`（默认）和 `chrome`（macOS）。
 
 ## 功能
 
-- 每次从 Chrome 读取 zentao Cookie（`za/zentaosid/zp`）
+- 默认从 `~/.zentao/cookies` 读取 zentao Cookie（`keepLogin/za/zentaosid/zp`）
+- 支持账号密码登录并保存 Cookie 到 `~/.zentao/cookies`
+  - 登录落盘仅保留：`keepLogin`、`za`、`zp`、`zentaosid`
+  - `login` 仅写 cookie 文件，不更新 `config.json`
+- 可切换为从 Chrome（macOS）读取 Cookie（`cookie_source=chrome`）
 - 输出 Cookie 明细（含到期时间格式化）
 - 可选校验 Cookie 是否有效（根路径重定向规则）
 - 支持管理 Chrome Profile 并保存到 `config.json`
@@ -34,6 +38,15 @@ cargo build --release
 
 # 3) 运行示例（读取 cookie）
 ./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao
+
+# 4) 账号密码登录并保存 cookie 文件
+./target/release/zentao login --url http://shendao.sharexm.cn/zentao \
+  --username <username> --password '<password>'
+
+# 5) 登录时显式指定代理（例如 socks5）
+./target/release/zentao login --url http://shendao.sharexm.cn/zentao \
+  --username <username> --password '<password>' \
+  --proxy socks5h://127.0.0.1:1080
 ```
 
 ```bash
@@ -64,7 +77,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # 1) 列出并选择 Chrome profile，保存到配置
 ./target/release/zentao chrome profile
 
-# 2) 读取 Cookie（默认使用配置中的 chrome_profile）
+# 2) 读取 Cookie（默认使用 file: ~/.zentao/cookies）
 ./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao
 
 # 3) 临时覆盖 profile
@@ -102,8 +115,34 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - 配置文件路径：`~/.zentao/config.json`
 - 字段：
   - `url`（可被 `--url` 覆盖）
-  - `chrome_profile`（由 `zentao chrome profile` 写入）
-- Cookie 不会持久化到配置文件
+  - `cookie_source`：`chrome` 或 `file`（缺失时默认 `file`）
+  - `chrome_profile`（由 `zentao chrome profile` 写入；仅在 `cookie_source=chrome` 时生效）
+- Cookie 值持久化到 `~/.zentao/cookies`（Netscape cookie jar）
+- `config.json` 仅保存非敏感配置项（如 `url`、`cookie_source`、`chrome_profile`）
+
+## cookie 输出示例
+
+`zentao cookie --url http://shendao.sharexm.cn/zentao` 输出为：
+
+```text
+Cookie source: /Users/you/.zentao/cookies
+目标域名: shendao.sharexm.cn
+
+cookie 域名: shendao.sharexm.cn [OK]
+
+cookie 状态:
+- zentaosid: [OK]
+- za: [OK]
+- zp: [OK]
+- keepLogin: [OK]
+
+cookie 明细:
+name       value      domain              path      secure  httpOnly  expires
+zentaosid  ...        shendao.sharexm.cn  /         false   true      session
+za         ...        shendao.sharexm.cn  /zentao/  false   true      2026-03-31 ...
+zp         ...        shendao.sharexm.cn  /zentao/  false   true      2026-03-31 ...
+keepLogin  on         shendao.sharexm.cn  /zentao/  false   true      2026-03-31 ...
+```
 
 ## 测试
 
