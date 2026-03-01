@@ -327,8 +327,7 @@ fn run_search(args: SearchArgs) -> Result<()> {
     if args.json {
         println!("{}", json);
     } else {
-        let text =
-            search::render_search_lines_from_json_with_options(&json, args.assigned_to.is_some())?;
+        let text = search::render_search_lines_from_json(&json)?;
         print!("{}", text);
     }
     Ok(())

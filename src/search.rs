@@ -164,77 +164,43 @@ pub fn render_search_json(result: &SearchResult) -> Result<String> {
     serde_json::to_string_pretty(result).map_err(|e| anyhow!("渲染 JSON 失败: {e}"))
 }
 
-pub fn render_search_lines_from_json_with_options(
-    json: &str,
-    hide_resolved_date: bool,
-) -> Result<String> {
+pub fn render_search_lines_from_json(json: &str) -> Result<String> {
     let result: SearchResult =
         serde_json::from_str(json).map_err(|e| anyhow!("解析搜索 JSON 失败: {e}"))?;
 
-    let mut out = String::new();
-    let overview = result
-        .total
-        .as_deref()
-        .map(normalize_total_line)
-        .unwrap_or_else(|| format!("共 {} 个Bug", result.bugs.len()));
-    out.push_str(&overview);
-    out.push('\n');
-    out.push('\n');
-    if hide_resolved_date {
-        out.push_str("| ID | 级别 | 标题 | 创建者 | 指派给 | 截止日期 |\n");
-        out.push_str("|---:|:----:|------|--------|--------|----------|\n");
-    } else {
-        out.push_str("| ID | 级别 | 标题 | 创建者 | 指派给 | 解决日期 | 截止日期 |\n");
-        out.push_str("|---:|:----:|------|--------|--------|----------|----------|\n");
+    if result.bugs.is_empty() {
+        return Ok("搜索结果为空。\n".to_string());
     }
 
-    for bug in &result.bugs {
+    let mut out = String::new();
+    for (idx, bug) in result.bugs.iter().enumerate() {
         let resolved_date = if bug.resolved_date.trim().is_empty() {
-            "-"
+            "--"
         } else {
             bug.resolved_date.trim()
         };
         let deadline = if bug.deadline.trim().is_empty() || bug.deadline.trim() == "0000-00-00" {
-            "-"
+            "--"
         } else {
             bug.deadline.trim()
         };
         let title = bug.title.replace('\n', " ").replace('\r', " ");
-
-        if hide_resolved_date {
-            out.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {} |\n",
-                bug.id,
-                bug.severity.trim(),
-                title.trim(),
-                bug.opened_by.trim(),
-                bug.assigned_to.trim(),
-                deadline,
-            ));
-        } else {
-            out.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {} | {} |\n",
-                bug.id,
-                bug.severity.trim(),
-                title.trim(),
-                bug.opened_by.trim(),
-                bug.assigned_to.trim(),
-                resolved_date,
-                deadline,
-            ));
+        out.push_str(&format!("{}. [{}] {}\n", idx + 1, bug.id, title.trim()));
+        out.push_str(&format!(
+            "级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{} ｜ 解决日期：{}\n",
+            bug.severity.trim(),
+            bug.opened_by.trim(),
+            bug.opened_date.trim(),
+            bug.assigned_to.trim(),
+            deadline,
+            resolved_date
+        ));
+        if idx + 1 < result.bugs.len() {
+            out.push('\n');
         }
     }
 
     Ok(out)
-}
-
-fn normalize_total_line(total: &str) -> String {
-    total
-        .trim()
-        .trim_start_matches("本页")
-        .trim_end_matches('。')
-        .trim()
-        .to_string()
 }
 
 fn sel(css: &str) -> Selector {
