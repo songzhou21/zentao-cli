@@ -188,8 +188,13 @@ pub fn render_search_lines_from_json(
         total, unresolved
     ));
     for (idx, bug) in result.bugs.iter().enumerate() {
+        let resolved = is_resolved_bug(bug);
         let resolved_date = normalize_date_for_display(&bug.resolved_date);
-        let (deadline_display, deadline_overdue) = format_deadline_for_display(&bug.deadline, today);
+        let (deadline_display, deadline_overdue) = if resolved {
+            (normalize_date_for_display(&bug.deadline).to_string(), false)
+        } else {
+            format_deadline_for_display(&bug.deadline, today)
+        };
         let title = bug.title.replace('\n', " ").replace('\r', " ");
         let deadline_segment = if deadline_overdue {
             format!(
@@ -200,7 +205,7 @@ pub fn render_search_lines_from_json(
             format!("截止日期：{}", deadline_display)
         };
         let title_line = format!("{}. [{}] {}", idx + 1, bug.id, title.trim());
-        if is_resolved_bug(bug) {
+        if resolved {
             out.push_str(&format!("\x1b[38;5;247m{}\x1b[0m\n", title_line));
         } else {
             out.push_str(&format!("{title_line}\n"));

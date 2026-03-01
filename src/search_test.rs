@@ -305,6 +305,9 @@ fn render_search_lines_resolved_title_is_gray() {
     let text = render_search_lines_from_json(json, false).expect("lines should render");
     assert!(text.contains("1. [1] 未解决标题"));
     assert!(text.contains("\x1b[38;5;247m2. [2] 已解决标题\x1b[0m"));
+    assert!(text.contains("截止日期：2026-03-10 ｜ 解决日期：2026-03-01"));
+    assert!(!text.contains("2026-03-10（"));
+    assert!(!text.contains("\x1b[1;31m2026-03-10"));
 }
 
 #[test]
