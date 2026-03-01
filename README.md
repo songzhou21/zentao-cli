@@ -10,16 +10,18 @@
 - 支持管理 Chrome Profile 并保存到 `config.json`
 - 支持按 Bug ID 抓取详情并输出 Markdown（正文图片地址自动补全）
 - 支持按图片 URL 直接下载到本地（`image download --url`）
-- 支持搜索 Bug（按指派者条件筛选，输出 Markdown 表格）
+- 支持搜索 Bug（按指派者、解决者、解决日期范围筛选，输出文本列表）
 
 ## 搜索字段（当前支持）
 
 - `assigned_to`（指派给）
+- `resolved_by`（解决者）
+- `resolved_date_from`（解决日期起始，含）
+- `resolved_date_to`（解决日期截止，含）
 
 ## TODO（搜索字段）
 
-- 解决者
-- 解决日期
+- 更多字段待补充
 
 ## 构建与运行
 
@@ -87,7 +89,11 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # 9) 搜索指派给某人的 Bug
 ./target/release/zentao search --assigned-to zhousong
 
-# 10) 输出 JSON（便于脚本消费）
+# 10) 按解决者 + 解决日期范围搜索
+./target/release/zentao search --resolved-by zhousong \
+  --resolved-date-from 2025-11-14 --resolved-date-to 2025-11-22
+
+# 11) 输出 JSON（便于脚本消费）
 ./target/release/zentao search --assigned-to zhousong --json
 ```
 

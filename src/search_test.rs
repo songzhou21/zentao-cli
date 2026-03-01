@@ -167,10 +167,47 @@ fn render_search_lines_from_json_output() {
     let html = read_fixture("search_assigned_to_zhousong.html");
     let result = parse_search_result(&html).expect("parse should succeed");
     let json = render_search_json(&result).expect("json should render");
-    let text = render_search_lines_from_json(&json).expect("lines should render");
+    let text = render_search_lines_from_json(&json, false).expect("lines should render");
 
     assert!(text.contains("1. [51276] 【系统测试】添加子社群"));
     assert!(text.contains("2. [48919] 【系统测试】PC登录后"));
     assert!(text.contains("级别：3 ｜ 创建者：用户甲 02-24 15:43 ｜ 指派：用户乙 ｜ 截止日期：-- ｜ 解决日期：--"));
     assert!(text.contains("级别：3 ｜ 创建者：用户甲 12-11 11:25 ｜ 指派：用户乙 ｜ 截止日期：2025-12-16 ｜ 解决日期：--"));
+}
+
+#[test]
+fn render_search_lines_zero_resolved_date_as_dash() {
+    let json = r#"{
+  "bugs": [
+    {
+      "id": 1,
+      "severity": "2",
+      "pri": "2",
+      "confirmed": "否",
+      "title": "t",
+      "status": "激活",
+      "opened_by": "a",
+      "opened_date": "02-28 18:32",
+      "assigned_to": "b",
+      "resolved_date": "00-00 00:00",
+      "resolution": "",
+      "deadline": "0000-00-00"
+    }
+  ],
+  "total": "本页共 1 个Bug，未解决 1。"
+}"#;
+
+    let text = render_search_lines_from_json(json, false).expect("lines should render");
+    assert!(text.contains("截止日期：-- ｜ 解决日期：--"));
+}
+
+#[test]
+fn render_search_lines_hide_resolved_date_for_assigned_to() {
+    let html = read_fixture("search_assigned_to_zhousong.html");
+    let result = parse_search_result(&html).expect("parse should succeed");
+    let json = render_search_json(&result).expect("json should render");
+    let text = render_search_lines_from_json(&json, true).expect("lines should render");
+
+    assert!(text.contains("截止日期：--"));
+    assert!(!text.contains("解决日期："));
 }

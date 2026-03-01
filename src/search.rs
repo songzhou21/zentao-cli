@@ -164,7 +164,10 @@ pub fn render_search_json(result: &SearchResult) -> Result<String> {
     serde_json::to_string_pretty(result).map_err(|e| anyhow!("渲染 JSON 失败: {e}"))
 }
 
-pub fn render_search_lines_from_json(json: &str) -> Result<String> {
+pub fn render_search_lines_from_json(
+    json: &str,
+    hide_resolved_date: bool,
+) -> Result<String> {
     let result: SearchResult =
         serde_json::from_str(json).map_err(|e| anyhow!("解析搜索 JSON 失败: {e}"))?;
 
@@ -174,33 +177,49 @@ pub fn render_search_lines_from_json(json: &str) -> Result<String> {
 
     let mut out = String::new();
     for (idx, bug) in result.bugs.iter().enumerate() {
-        let resolved_date = if bug.resolved_date.trim().is_empty() {
-            "--"
-        } else {
-            bug.resolved_date.trim()
-        };
-        let deadline = if bug.deadline.trim().is_empty() || bug.deadline.trim() == "0000-00-00" {
-            "--"
-        } else {
-            bug.deadline.trim()
-        };
+        let resolved_date = normalize_date_for_display(&bug.resolved_date);
+        let deadline = normalize_date_for_display(&bug.deadline);
         let title = bug.title.replace('\n', " ").replace('\r', " ");
         out.push_str(&format!("{}. [{}] {}\n", idx + 1, bug.id, title.trim()));
-        out.push_str(&format!(
-            "级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{} ｜ 解决日期：{}\n",
-            bug.severity.trim(),
-            bug.opened_by.trim(),
-            bug.opened_date.trim(),
-            bug.assigned_to.trim(),
-            deadline,
-            resolved_date
-        ));
+        if hide_resolved_date {
+            out.push_str(&format!(
+                "级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{}\n",
+                bug.severity.trim(),
+                bug.opened_by.trim(),
+                bug.opened_date.trim(),
+                bug.assigned_to.trim(),
+                deadline,
+            ));
+        } else {
+            out.push_str(&format!(
+                "级别：{} ｜ 创建者：{} {} ｜ 指派：{} ｜ 截止日期：{} ｜ 解决日期：{}\n",
+                bug.severity.trim(),
+                bug.opened_by.trim(),
+                bug.opened_date.trim(),
+                bug.assigned_to.trim(),
+                deadline,
+                resolved_date
+            ));
+        }
         if idx + 1 < result.bugs.len() {
             out.push('\n');
         }
     }
 
     Ok(out)
+}
+
+fn normalize_date_for_display(raw: &str) -> &str {
+    let v = raw.trim();
+    if v.is_empty()
+        || v == "0000-00-00"
+        || v == "00-00 00:00"
+        || v == "0000-00-00 00:00:00"
+    {
+        "--"
+    } else {
+        v
+    }
 }
 
 fn sel(css: &str) -> Selector {

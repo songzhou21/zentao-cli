@@ -105,12 +105,16 @@ struct ImageDownloadArgs {
     url: String,
 }
 
-/// 搜索 Bug（支持按指派者、解决日期等条件筛选）
+/// 搜索 Bug（支持按指派者、解决者、解决日期等条件筛选）
 #[derive(Debug, Args)]
 struct SearchArgs {
     /// 指派给（用户名），例如 zhousong
     #[arg(long, value_name = "USER")]
     assigned_to: Option<String>,
+
+    /// 解决者（用户名），例如 zhousong
+    #[arg(long, value_name = "USER")]
+    resolved_by: Option<String>,
 
     /// 解决日期起始（含），格式 YYYY-MM-DD
     #[arg(long, value_name = "DATE")]
@@ -302,6 +306,9 @@ fn run_search(args: SearchArgs) -> Result<()> {
     if let Some(ref user) = args.assigned_to {
         field_params.push(("assignedTo".to_string(), user.clone()));
     }
+    if let Some(ref user) = args.resolved_by {
+        field_params.push(("resolvedBy".to_string(), user.clone()));
+    }
     if let Some(ref date_from) = args.resolved_date_from {
         field_params.push(("resolvedDate_from".to_string(), date_from.clone()));
     }
@@ -327,7 +334,7 @@ fn run_search(args: SearchArgs) -> Result<()> {
     if args.json {
         println!("{}", json);
     } else {
-        let text = search::render_search_lines_from_json(&json)?;
+        let text = search::render_search_lines_from_json(&json, args.assigned_to.is_some())?;
         print!("{}", text);
     }
     Ok(())

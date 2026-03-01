@@ -116,6 +116,30 @@ fn search_cli_parse_json_flag() {
 }
 
 #[test]
+fn search_cli_parse_resolved_by_and_date_range() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "search",
+        "--resolved-by",
+        "zhousong",
+        "--resolved-date-from",
+        "2025-11-14",
+        "--resolved-date-to",
+        "2025-11-22",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(args.resolved_by.as_deref(), Some("zhousong"));
+            assert_eq!(args.resolved_date_from.as_deref(), Some("2025-11-14"));
+            assert_eq!(args.resolved_date_to.as_deref(), Some("2025-11-22"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
 fn validate_image_url_accepts_http_https() {
     assert!(validate_image_url("http://example.com/a.png").is_ok());
     assert!(validate_image_url("https://example.com/a.png").is_ok());

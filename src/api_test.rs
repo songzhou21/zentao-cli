@@ -224,11 +224,11 @@ fn build_search_form_defaults() {
     assert_eq!(find("groupAndOr"), Some("and"));
 }
 
-// build_search_form 应能正确注入 assignedTo 和日期范围覆盖。
+// build_search_form 应能正确注入 resolvedBy 和日期范围覆盖。
 #[test]
 fn build_search_form_with_overrides() {
     let overrides = vec![
-        ("assignedTo".to_string(), "zhousong".to_string()),
+        ("resolvedBy".to_string(), "lihong".to_string()),
         ("resolvedDate_from".to_string(), "2025-01-01".to_string()),
         ("resolvedDate_to".to_string(), "2025-12-31".to_string()),
     ];
@@ -244,10 +244,10 @@ fn build_search_form_with_overrides() {
             .map(|(_, v)| v.as_str())
     };
 
-    // Slot 1: assignedTo = zhousong
-    assert_eq!(find("field1"), Some("assignedTo"));
+    // Slot 1: resolvedBy = lihong
+    assert_eq!(find("field1"), Some("resolvedBy"));
     assert_eq!(find("operator1"), Some("="));
-    assert_eq!(find("value1"), Some("zhousong"));
+    assert_eq!(find("value1"), Some("lihong"));
 
     // Slot 2: resolvedDate >= 2025-01-01
     assert_eq!(find("field2"), Some("resolvedDate"));
@@ -258,6 +258,29 @@ fn build_search_form_with_overrides() {
     assert_eq!(find("field5"), Some("resolvedDate"));
     assert_eq!(find("operator5"), Some("<="));
     assert_eq!(find("value5"), Some("2025-12-31"));
+
+    // Slot 6: resolvedBy 保持空值
+    assert_eq!(find("field6"), Some("resolvedBy"));
+    assert_eq!(find("operator6"), Some("="));
+    assert_eq!(find("value6"), Some(""));
+}
+
+// 当仅设置 resolvedBy 时，应将 resolvedBy 放在 slot1（对齐 Zentao 页面行为）。
+#[test]
+fn build_search_form_resolved_by_promoted_to_slot1() {
+    let overrides = vec![("resolvedBy".to_string(), "zhousong".to_string())];
+    let form = build_search_form(92, "/zentao/bug-browse-92-0-bySearch-myQueryID.html", &overrides);
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("resolvedBy"));
+    assert_eq!(find("operator1"), Some("="));
+    assert_eq!(find("value1"), Some("zhousong"));
+    assert_eq!(find("field6"), Some("resolvedBy"));
+    assert_eq!(find("value6"), Some(""));
 }
 
 // build_search_form 应将 product_id 填入 fieldproduct。

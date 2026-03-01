@@ -179,7 +179,7 @@ impl ZentaoApi {
 /// - `"assignedTo"` → slot 1 (operator `=`)
 /// - `"resolvedDate_from"` → slot 2 (operator `>=`)
 /// - `"resolvedDate_to"` → slot 5 (operator `<=`)
-/// - `"resolvedBy"` → slot 6 (operator `=`)
+/// - `"resolvedBy"` → slot 1 (operator `=`), slot 6 保持空值
 fn build_search_form(
     product_id: u64,
     action_url: &str,
@@ -302,6 +302,16 @@ fn build_search_form(
                 break;
             }
         }
+    }
+
+    // Keep query shape close to Zentao UI:
+    // resolvedBy is always written into slot1, and slot6 is kept empty.
+    let resolved_by_value = slots[5].value.clone();
+    if !resolved_by_value.trim().is_empty() {
+        slots[0].field = "resolvedBy";
+        slots[0].operator = "=";
+        slots[0].value = resolved_by_value;
+        slots[5].value.clear();
     }
 
     // Emit slot params
