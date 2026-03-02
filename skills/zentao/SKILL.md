@@ -75,7 +75,7 @@ zentao image download --url "<image-url>"
 
 ```bash
 zentao bug show <ID_OR_URL> \
-  | rg -o '!\[[^]]*\]\((https?://[^)]+)\)' \
+  | grep -Eo '!\[[^]]*\]\((https?://[^)]+)\)' \
   | sed -E 's/.*\((https?:\/\/[^)]+)\).*/\1/' \
   | while read -r url; do
       zentao image download --url "$url"
