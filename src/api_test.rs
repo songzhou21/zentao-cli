@@ -88,7 +88,8 @@ fn trim_site_url() {
 
 #[test]
 fn summarize_login_response_decodes_unicode_message() {
-    let raw = r#"{"result":"fail","message":"\u60a8\u8fd8\u67091\u6b21\u5c1d\u8bd5\u673a\u4f1a\u3002"}"#;
+    let raw =
+        r#"{"result":"fail","message":"\u60a8\u8fd8\u67091\u6b21\u5c1d\u8bd5\u673a\u4f1a\u3002"}"#;
     let got = summarize_login_response(raw);
     assert!(got.contains("result=fail"));
     assert!(got.contains("您还有1次尝试机会。"));
@@ -273,11 +274,42 @@ fn build_search_form_with_overrides() {
     assert_eq!(find("value6"), Some(""));
 }
 
+#[test]
+fn build_search_form_with_module_and_status() {
+    let overrides = vec![
+        ("module".to_string(), "1099".to_string()),
+        ("status".to_string(), "active".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("module"));
+    assert_eq!(find("operator1"), Some("belong"));
+    assert_eq!(find("value1"), Some("1099"));
+
+    assert_eq!(find("field4"), Some("status"));
+    assert_eq!(find("operator4"), Some("="));
+    assert_eq!(find("value4"), Some("active"));
+}
+
 // 当仅设置 resolvedBy 时，应将 resolvedBy 放在 slot1（对齐 Zentao 页面行为）。
 #[test]
 fn build_search_form_resolved_by_promoted_to_slot1() {
     let overrides = vec![("resolvedBy".to_string(), "zhousong".to_string())];
-    let form = build_search_form(92, "/zentao/bug-browse-92-0-bySearch-myQueryID.html", &overrides);
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
     let find = |k: &str| {
         form.iter()
             .find(|(key, _)| key == k)

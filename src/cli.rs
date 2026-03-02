@@ -146,6 +146,14 @@ struct SearchArgs {
     #[arg(long, value_name = "DATE")]
     resolved_date_to: Option<String>,
 
+    /// 所属模块 ID，例如 1099
+    #[arg(long, value_name = "MODULE_ID")]
+    module: Option<String>,
+
+    /// Bug 状态，例如 active / resolved / closed
+    #[arg(long, value_name = "STATUS")]
+    bug_status: Option<String>,
+
     /// 站点 URL
     #[arg(long)]
     url: Option<String>,
@@ -211,7 +219,10 @@ fn run_cookie(args: CookieArgs) -> Result<()> {
     println!("Cookie source: {}", cookie.profile_path);
     println!("目标域名: {}", target_host);
     println!();
-    println!("cookie 域名: {}", format_cookie_domains_line(&matched_domains));
+    println!(
+        "cookie 域名: {}",
+        format_cookie_domains_line(&matched_domains)
+    );
     println!();
     println!("cookie 状态:");
     print_cookie_presence(&cookie.items, "zentaosid");
@@ -268,7 +279,10 @@ fn run_login(args: LoginArgs) -> Result<()> {
             cookie_file_path.display()
         ),
         Some("fail") => println!("\x1b[1;31m登录失败\x1b[0m"),
-        _ => println!("登录响应: {}", format_login_response(&login.login_response_body)),
+        _ => println!(
+            "登录响应: {}",
+            format_login_response(&login.login_response_body)
+        ),
     }
     if let Some(message) = parsed_login.message.as_deref() {
         if !message.is_empty() {
@@ -296,7 +310,9 @@ fn run_login(args: LoginArgs) -> Result<()> {
     Ok(())
 }
 
-fn select_persist_cookie_items(items: &[browser::BrowserCookieItem]) -> Vec<browser::BrowserCookieItem> {
+fn select_persist_cookie_items(
+    items: &[browser::BrowserCookieItem],
+) -> Vec<browser::BrowserCookieItem> {
     let wanted = ["keepLogin", "za", "zp", "zentaosid"];
     let mut out = Vec::new();
     for name in wanted {
@@ -396,7 +412,8 @@ fn run_search(args: SearchArgs) -> Result<()> {
 
     let api_client = ZentaoApi::new(&site_url, "v1")?;
     let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
-    let search_cookie_header = append_search_cookie_page_size(&cookie.cookie_header, args.page_size);
+    let search_cookie_header =
+        append_search_cookie_page_size(&cookie.cookie_header, args.page_size);
 
     // Build field overrides from CLI args
     let mut field_params: Vec<(String, String)> = Vec::new();
@@ -412,6 +429,12 @@ fn run_search(args: SearchArgs) -> Result<()> {
     }
     if let Some(ref date_to) = args.resolved_date_to {
         field_params.push(("resolvedDate_to".to_string(), date_to.clone()));
+    }
+    if let Some(ref module) = args.module {
+        field_params.push(("module".to_string(), module.clone()));
+    }
+    if let Some(ref status) = args.bug_status {
+        field_params.push(("status".to_string(), status.clone()));
     }
 
     let html = api_client.search_bugs(
@@ -581,7 +604,9 @@ fn load_cookie_for_site(
         .map(|c| c.cookie_source.clone())
         .unwrap_or(CookieSource::Chrome);
     match source {
-        CookieSource::Chrome => browser::load_zentao_cookie_from_chrome_macos(site_url, profile_override),
+        CookieSource::Chrome => {
+            browser::load_zentao_cookie_from_chrome_macos(site_url, profile_override)
+        }
         CookieSource::File => {
             let path = resolve_cookie_file_path(None)?;
             cookie_store::load_cookie_from_file(site_url, &path)
@@ -851,7 +876,9 @@ fn is_target_set_cookie(line: &str) -> bool {
 }
 
 fn print_cookie_presence(items: &[browser::BrowserCookieItem], name: &str) {
-    let exists = items.iter().any(|it| it.name == name && !it.value.is_empty());
+    let exists = items
+        .iter()
+        .any(|it| it.name == name && !it.value.is_empty());
     if exists {
         println!("- {}: \x1b[1;32m[OK]\x1b[0m", name);
     } else {

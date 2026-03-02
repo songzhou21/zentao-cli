@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Context, Result};
 use crate::browser::BrowserCookieItem;
+use anyhow::{anyhow, Context, Result};
 use regex::Regex;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, SET_COOKIE};
@@ -121,16 +121,16 @@ impl ZentaoApi {
         // <script>parent.location='/zentao/bug-browse-...';</script>
         // Follow it to fetch the actual bug table HTML.
         if let Some(redirect) = extract_js_redirect(&body) {
-            let redirect_url = if redirect.starts_with("http://") || redirect.starts_with("https://")
-            {
-                redirect
-            } else {
-                let base = reqwest::Url::parse(&format!("{}/", self.site_url))
-                    .context("解析站点 URL 失败")?;
-                base.join(&redirect)
-                    .map(|u| u.to_string())
-                    .with_context(|| format!("拼接搜索跳转地址失败: {}", redirect))?
-            };
+            let redirect_url =
+                if redirect.starts_with("http://") || redirect.starts_with("https://") {
+                    redirect
+                } else {
+                    let base = reqwest::Url::parse(&format!("{}/", self.site_url))
+                        .context("解析站点 URL 失败")?;
+                    base.join(&redirect)
+                        .map(|u| u.to_string())
+                        .with_context(|| format!("拼接搜索跳转地址失败: {}", redirect))?
+                };
 
             let resp2 = self
                 .client
@@ -218,7 +218,10 @@ impl ZentaoApi {
         let page_headers = page_resp.headers().clone();
         let page_html = page_resp.text().context("读取登录页失败")?;
         let set_cookie_page = collect_set_cookie_lines(&page_headers);
-        merge_cookie_items(&mut cookie_map, parse_set_cookie_items(&set_cookie_page, &target_host)?);
+        merge_cookie_items(
+            &mut cookie_map,
+            parse_set_cookie_items(&set_cookie_page, &target_host)?,
+        );
         set_cookies_by_url.push((login_page_url.clone(), set_cookie_page));
 
         let verify_rand = parse_verify_rand(&page_html)?;
@@ -230,10 +233,7 @@ impl ZentaoApi {
             ("passwordStrength", "2".to_string()),
             ("referer", "/zentao/".to_string()),
             ("verifyRand", verify_rand),
-            (
-                "keepLogin",
-                if keep_login { "1" } else { "0" }.to_string(),
-            ),
+            ("keepLogin", if keep_login { "1" } else { "0" }.to_string()),
         ];
         if keep_login {
             form.push(("keepLogin[]", "on".to_string()));
@@ -256,7 +256,10 @@ impl ZentaoApi {
         let login_headers = login_resp.headers().clone();
         let login_response_body = login_resp.text().context("读取登录响应失败")?;
         if !login_response_body.contains("\"result\":\"success\"") {
-            return Err(anyhow!("登录失败: {}", summarize_login_response(&login_response_body)));
+            return Err(anyhow!(
+                "登录失败: {}",
+                summarize_login_response(&login_response_body)
+            ));
         }
         let set_cookie_login = collect_set_cookie_lines(&login_headers);
         merge_cookie_items(
@@ -280,7 +283,10 @@ impl ZentaoApi {
             return Err(anyhow!("登录后校验失败: 页面内容为空"));
         }
         let set_cookie_my = collect_set_cookie_lines(&my_headers);
-        merge_cookie_items(&mut cookie_map, parse_set_cookie_items(&set_cookie_my, &target_host)?);
+        merge_cookie_items(
+            &mut cookie_map,
+            parse_set_cookie_items(&set_cookie_my, &target_host)?,
+        );
         set_cookies_by_url.push((my_url, set_cookie_my));
 
         let mut cookies: Vec<BrowserCookieItem> = cookie_map.into_values().collect();
@@ -447,8 +453,10 @@ fn summarize_login_response(raw: &str) -> String {
 /// Field overrides use a compound key to distinguish same-field-name
 /// slots that differ by operator:
 /// - `"assignedTo"` → slot 1 (operator `=`)
+/// - `"module"` → slot 1 (operator `belong`)
 /// - `"resolvedDate_from"` → slot 2 (operator `>=`)
 /// - `"resolvedDate_to"` → slot 5 (operator `<=`)
+/// - `"status"` → slot 4 (operator `=`)
 /// - `"resolvedBy"` → slot 1 (operator `=`), slot 6 保持空值
 fn build_search_form(
     product_id: u64,
@@ -543,10 +551,10 @@ fn build_search_form(
         },
         Slot {
             and_or: "AND",
-            field: "steps",
-            operator: "include",
+            field: "status",
+            operator: "=",
             value: String::new(),
-            match_key: "steps",
+            match_key: "status",
         },
         Slot {
             and_or: "and",
@@ -566,6 +574,12 @@ fn build_search_form(
 
     // Apply overrides by match_key
     for (key, value) in field_overrides {
+        if key == "module" {
+            slots[0].field = "module";
+            slots[0].operator = "belong";
+            slots[0].value = value.clone();
+            continue;
+        }
         for slot in slots.iter_mut() {
             if slot.match_key == key.as_str() {
                 slot.value = value.clone();
@@ -577,7 +591,7 @@ fn build_search_form(
     // Keep query shape close to Zentao UI:
     // resolvedBy is always written into slot1, and slot6 is kept empty.
     let resolved_by_value = slots[5].value.clone();
-    if !resolved_by_value.trim().is_empty() {
+    if !resolved_by_value.trim().is_empty() && slots[0].field == "assignedTo" {
         slots[0].field = "resolvedBy";
         slots[0].operator = "=";
         slots[0].value = resolved_by_value;

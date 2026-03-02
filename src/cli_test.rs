@@ -162,6 +162,27 @@ fn search_cli_parse_resolved_by_and_date_range() {
 }
 
 #[test]
+fn search_cli_parse_module_and_status() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "search",
+        "--module",
+        "1099",
+        "--bug-status",
+        "active",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(args.module.as_deref(), Some("1099"));
+            assert_eq!(args.bug_status.as_deref(), Some("active"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
 fn append_search_cookie_page_size_appends_cookie() {
     let got = append_search_cookie_page_size("za=1; zentaosid=2", 1000);
     assert_eq!(got, "za=1; zentaosid=2; pagerBugBrowse=1000");
@@ -202,7 +223,8 @@ fn login_cli_parse_required_fields() {
 
 #[test]
 fn format_login_response_decodes_unicode_message() {
-    let raw = r#"{"result":"fail","message":"\u60a8\u8fd8\u67093\u6b21\u5c1d\u8bd5\u673a\u4f1a\u3002"}"#;
+    let raw =
+        r#"{"result":"fail","message":"\u60a8\u8fd8\u67093\u6b21\u5c1d\u8bd5\u673a\u4f1a\u3002"}"#;
     let got = format_login_response(raw);
     assert!(got.contains("result=fail"));
     assert!(got.contains("您还有3次尝试机会。"));

@@ -110,7 +110,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 ./target/release/zentao search --resolved-by zhousong \
   --resolved-date-from 2025-11-14 --resolved-date-to 2025-11-22
 
-# 12) 输出 JSON（便于脚本消费）
+# 12) 按所属模块 + Bug 状态搜索
+./target/release/zentao search --module 1099 --bug-status active
+
+# 13) 输出 JSON（便于脚本消费）
 ./target/release/zentao search --assigned-to zhousong --json
 ```
 
