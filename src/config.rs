@@ -33,8 +33,7 @@ pub fn default_cookie_file_path() -> Result<PathBuf> {
 
 pub fn load_config(path: &Path) -> Result<Config> {
     let data = fs::read(path).with_context(|| format!("读取配置失败: {}", path.display()))?;
-    serde_json::from_slice(&data)
-        .with_context(|| format!("解析配置失败: {}", path.display()))
+    serde_json::from_slice(&data).with_context(|| format!("解析配置失败: {}", path.display()))
 }
 
 pub fn save_config(path: &Path, cfg: &Config) -> Result<()> {

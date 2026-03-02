@@ -165,8 +165,7 @@ fn normalize_bracket_heading_bold_scope(markdown: &str) -> Result<String> {
     let mut out = open_re.replace_all(markdown, "**$1**\n").to_string();
 
     // 清理因原始转换导致附着在图片后的尾部加粗标记。
-    let close_re =
-        Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建加粗标题结束正则失败")?;
+    let close_re = Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建加粗标题结束正则失败")?;
     out = close_re.replace_all(&out, "$1").to_string();
     Ok(out)
 }

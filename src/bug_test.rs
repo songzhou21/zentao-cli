@@ -14,8 +14,11 @@ fn read_fixture(name: &str) -> String {
 #[test]
 fn parse_real_48919_fixture() {
     let html = read_fixture("bug_48919_real.html");
-    let detail = parse_bug_detail("http://shendao.sharexm.cn/zentao/bug-view-48919.html", &html)
-        .expect("parse should succeed");
+    let detail = parse_bug_detail(
+        "http://shendao.sharexm.cn/zentao/bug-view-48919.html",
+        &html,
+    )
+    .expect("parse should succeed");
 
     assert!(detail.title.contains("PC登录后"));
     assert!(detail
@@ -36,11 +39,16 @@ fn parse_real_48919_fixture() {
 #[test]
 fn parse_real_51267_multiple_images_fixture() {
     let html = read_fixture("bug_51267_real.html");
-    let detail = parse_bug_detail("http://shendao.sharexm.cn/zentao/bug-view-51267.html", &html)
-        .expect("parse should succeed");
+    let detail = parse_bug_detail(
+        "http://shendao.sharexm.cn/zentao/bug-view-51267.html",
+        &html,
+    )
+    .expect("parse should succeed");
 
     assert!(detail.title.contains("我的->创作中心"));
-    assert!(detail.markdown_description.contains("在我的页面进入创作中心"));
+    assert!(detail
+        .markdown_description
+        .contains("在我的页面进入创作中心"));
     assert!(detail
         .markdown_description
         .contains("![img#1](http://shendao.sharexm.cn/zentao/file-read-62828.jpeg)"));

@@ -25,7 +25,11 @@ pub fn save_cookie_file(path: &Path, _site_url: &str, items: &[BrowserCookieItem
 
     for it in items {
         let domain = if it.domain.is_empty() { "" } else { &it.domain };
-        let include_subdomains = if domain.starts_with('.') { "TRUE" } else { "FALSE" };
+        let include_subdomains = if domain.starts_with('.') {
+            "TRUE"
+        } else {
+            "FALSE"
+        };
         let secure = if it.secure { "TRUE" } else { "FALSE" };
         let expires_unix = browser::chrome_expires_utc_to_unix(it.expires_utc).max(0);
         let prefix = if it.http_only { "#HttpOnly_" } else { "" };
@@ -40,7 +44,8 @@ pub fn save_cookie_file(path: &Path, _site_url: &str, items: &[BrowserCookieItem
 }
 
 pub fn load_cookie_from_file(site_url: &str, path: &Path) -> Result<BrowserCookieResult> {
-    let data = fs::read(path).with_context(|| format!("读取 cookie 文件失败: {}", path.display()))?;
+    let data =
+        fs::read(path).with_context(|| format!("读取 cookie 文件失败: {}", path.display()))?;
     let file_items = parse_cookie_file(&data, path)?;
 
     let parsed = Url::parse(site_url).context("解析 URL 失败")?;

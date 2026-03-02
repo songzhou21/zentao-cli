@@ -113,9 +113,21 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # 12) 按所属模块 + Bug 状态搜索
 ./target/release/zentao search --module 1099 --bug-status active
 
-# 13) 输出 JSON（便于脚本消费）
+# 13) 按标题模块分组（module）输出
+./target/release/zentao search --group module
+
+# 14) 按指派对象分组（assigned-to）输出 JSON
+./target/release/zentao search --group assigned-to --json
+
+# 15) 输出 JSON（便于脚本消费）
 ./target/release/zentao search --assigned-to zhousong --json
 ```
+
+`--group` 说明：
+- 取值：`module`（按标题前缀分组，如 `【IM数据库改造】`）、`assigned-to`（按指派对象分组）
+- 排序规则（`--json` 与非 `--json` 一致）：
+  - 先按分组内“最新创建时间”倒序排列分组
+  - 再按每个分组内 bug 的创建时间倒序排列
 
 ## 配置说明
 

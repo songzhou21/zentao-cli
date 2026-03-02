@@ -183,6 +183,26 @@ fn search_cli_parse_module_and_status() {
 }
 
 #[test]
+fn search_cli_parse_group() {
+    let cli = Cli::try_parse_from(["zentao", "search", "--group", "module"]).expect("should parse");
+    match cli.command {
+        Commands::Search(args) => {
+            assert!(matches!(args.group, Some(SearchGroupBy::TestModule)));
+        }
+        _ => panic!("unexpected command"),
+    }
+
+    let cli =
+        Cli::try_parse_from(["zentao", "search", "--group", "assigned-to"]).expect("should parse");
+    match cli.command {
+        Commands::Search(args) => {
+            assert!(matches!(args.group, Some(SearchGroupBy::AssignedTo)));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
 fn append_search_cookie_page_size_appends_cookie() {
     let got = append_search_cookie_page_size("za=1; zentaosid=2", 1000);
     assert_eq!(got, "za=1; zentaosid=2; pagerBugBrowse=1000");
@@ -371,8 +391,11 @@ fn render_cookie_table_contains_header_and_session_expiry() {
     assert!(lines[0].contains("name"));
     assert!(lines[0].contains("httpOnly"));
     assert!(lines[0].contains("expires"));
-    assert!(lines[1].contains("zentaosid"));
-    assert!(lines[1].contains("session"));
+    let data_line = lines
+        .iter()
+        .find(|line| line.contains("zentaosid"))
+        .expect("should contain zentaosid row");
+    assert!(data_line.contains("session"));
 }
 
 fn spawn_once_server(status: u16, body: &'static [u8]) -> (Url, thread::JoinHandle<()>) {

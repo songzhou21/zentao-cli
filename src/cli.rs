@@ -7,7 +7,7 @@ use crate::cookie_store;
 use crate::search;
 use anyhow::{anyhow, Context, Result};
 use chrono::{TimeZone, Utc};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use regex::Regex;
 use reqwest::Url;
 use serde_json::Value;
@@ -154,6 +154,10 @@ struct SearchArgs {
     #[arg(long, value_name = "STATUS")]
     bug_status: Option<String>,
 
+    /// 分组维度（module: 按标题模块；assigned-to: 按指派对象）
+    #[arg(long, value_enum, value_name = "GROUP")]
+    group: Option<SearchGroupBy>,
+
     /// 站点 URL
     #[arg(long)]
     url: Option<String>,
@@ -173,6 +177,14 @@ struct SearchArgs {
     /// 每页显示条数（通过 Cookie pagerBugBrowse 传给禅道）
     #[arg(long, value_name = "N", default_value_t = 20)]
     page_size: u32,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SearchGroupBy {
+    #[value(name = "module")]
+    TestModule,
+    #[value(name = "assigned-to")]
+    AssignedTo,
 }
 
 pub fn run(args: Vec<OsString>) -> Result<()> {
@@ -451,12 +463,31 @@ fn run_search(args: SearchArgs) -> Result<()> {
     }
 
     let result = search::parse_search_result(&html)?;
-    let json = search::render_search_json(&result)?;
-    if args.json {
-        println!("{}", json);
+    if let Some(group_by) = args.group {
+        let grouped_json = search::render_grouped_search_json(
+            &result,
+            match group_by {
+                SearchGroupBy::TestModule => search::GroupBy::TestModule,
+                SearchGroupBy::AssignedTo => search::GroupBy::AssignedTo,
+            },
+        )?;
+        if args.json {
+            println!("{}", grouped_json);
+        } else {
+            let text = search::render_grouped_search_lines_from_json(
+                &grouped_json,
+                args.assigned_to.is_some(),
+            )?;
+            print!("{}", text);
+        }
     } else {
-        let text = search::render_search_lines_from_json(&json, args.assigned_to.is_some())?;
-        print!("{}", text);
+        let json = search::render_search_json(&result)?;
+        if args.json {
+            println!("{}", json);
+        } else {
+            let text = search::render_search_lines_from_json(&json, args.assigned_to.is_some())?;
+            print!("{}", text);
+        }
     }
     Ok(())
 }

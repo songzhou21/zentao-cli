@@ -250,7 +250,10 @@ fn decrypt_chrome_cookie_value(encrypted: &[u8], key: &[u8]) -> Result<String> {
     Err(anyhow!("Chrome cookie 不是有效 UTF-8"))
 }
 
-fn choose_best_by_path<'a>(items: &'a [BrowserCookieItem], name: &str) -> Option<&'a BrowserCookieItem> {
+fn choose_best_by_path<'a>(
+    items: &'a [BrowserCookieItem],
+    name: &str,
+) -> Option<&'a BrowserCookieItem> {
     items
         .iter()
         .filter(|it| it.name == name && is_cookie_not_expired(it.expires_utc))
@@ -337,8 +340,8 @@ fn chrome_profiles_root() -> Result<PathBuf> {
 
 fn collect_chrome_profiles(root: &Path) -> Result<Vec<String>> {
     let mut profiles = Vec::new();
-    let entries = fs::read_dir(root)
-        .with_context(|| format!("读取目录失败: {}", root.display()))?;
+    let entries =
+        fs::read_dir(root).with_context(|| format!("读取目录失败: {}", root.display()))?;
 
     for entry in entries {
         let entry = entry.context("读取 profile 目录失败")?;
@@ -359,10 +362,12 @@ fn collect_chrome_profiles(root: &Path) -> Result<Vec<String>> {
     }
 
     profiles.sort();
-    if let Some(index) = profiles
-        .iter()
-        .position(|p| Path::new(p).file_name().map(|n| n == "Default").unwrap_or(false))
-    {
+    if let Some(index) = profiles.iter().position(|p| {
+        Path::new(p)
+            .file_name()
+            .map(|n| n == "Default")
+            .unwrap_or(false)
+    }) {
         let default = profiles.remove(index);
         profiles.insert(0, default);
     }
