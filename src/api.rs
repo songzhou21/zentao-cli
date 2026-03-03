@@ -42,7 +42,7 @@ impl ZentaoApi {
     }
 
     pub fn verify_cookie(&self, cookie: &str) -> Result<String> {
-        let verify_url = format!("{}/my-profile.html", self.site_url);
+        let verify_url = format!("{}/", self.site_url);
         let resp = self
             .client
             .get(&verify_url)
@@ -56,17 +56,20 @@ impl ZentaoApi {
         if !status.is_success() {
             return Err(anyhow!("cookie 校验失败: HTTP {}", status.as_u16()));
         }
-        if final_url == verify_url {
-            return Ok(final_url);
-        }
         if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
             return Err(anyhow!("cookie 无效或已过期"));
         }
 
-        Err(anyhow!(
-            "cookie 校验失败: 发生跳转，最终地址: {}",
-            final_url
-        ))
+        let body = resp.text().context("读取校验页面失败")?;
+
+        // Check for JS redirect to login page (e.g. self.location='/zentao/user-login-...')
+        if let Some(redirect) = extract_js_redirect(&body) {
+            if redirect.contains("/user-login-") || redirect.contains("/user-login.") {
+                return Err(anyhow!("cookie 无效或已过期"));
+            }
+        }
+
+        Ok(final_url)
     }
 
     /// Build a search query and fetch the resulting bug browse page.
@@ -121,6 +124,10 @@ impl ZentaoApi {
         // <script>parent.location='/zentao/bug-browse-...';</script>
         // Follow it to fetch the actual bug table HTML.
         if let Some(redirect) = extract_js_redirect(&body) {
+            // Check for JS redirect to login page before following
+            if redirect.contains("/user-login-") || redirect.contains("/user-login.") {
+                return Err(anyhow!("搜索失败: cookie 无效或已过期"));
+            }
             let redirect_url =
                 if redirect.starts_with("http://") || redirect.starts_with("https://") {
                     redirect
@@ -184,6 +191,12 @@ impl ZentaoApi {
         }
         if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
             return Err(anyhow!("获取 bug 详情失败: cookie 无效或已过期"));
+        }
+        // Check for JS redirect to login page
+        if let Some(redirect) = extract_js_redirect(&body) {
+            if redirect.contains("/user-login-") || redirect.contains("/user-login.") {
+                return Err(anyhow!("获取 bug 详情失败: cookie 无效或已过期"));
+            }
         }
         if body.trim().is_empty() {
             return Err(anyhow!("获取 bug 详情失败: 页面内容为空"));

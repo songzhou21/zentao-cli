@@ -102,19 +102,19 @@ fn verify_cookie_table_cases() {
         (
             "success no redirect",
             vec![ResponsePlan {
-                path: "/my-profile.html",
+                path: "/",
                 status: 200,
                 location: None,
                 body: "ok",
             }],
             "",
-            "/my-profile.html",
+            "/",
         ),
         (
             "login redirect",
             vec![
                 ResponsePlan {
-                    path: "/my-profile.html",
+                    path: "/",
                     status: 302,
                     location: Some("/user-login-abc.html"),
                     body: "",
@@ -130,33 +130,44 @@ fn verify_cookie_table_cases() {
             "",
         ),
         (
-            "unexpected redirect",
+            "non-login redirect is ok",
             vec![
                 ResponsePlan {
-                    path: "/my-profile.html",
+                    path: "/",
                     status: 302,
-                    location: Some("/project-index.html"),
+                    location: Some("/my/"),
                     body: "",
                 },
                 ResponsePlan {
-                    path: "/project-index.html",
+                    path: "/my/",
                     status: 200,
                     location: None,
-                    body: "project",
+                    body: "dashboard",
                 },
             ],
-            "发生跳转",
             "",
+            "/my/",
         ),
         (
             "http non 2xx",
             vec![ResponsePlan {
-                path: "/my-profile.html",
+                path: "/",
                 status: 500,
                 location: None,
                 body: "err",
             }],
             "cookie 校验失败: HTTP 500",
+            "",
+        ),
+        (
+            "js redirect to login",
+            vec![ResponsePlan {
+                path: "/",
+                status: 200,
+                location: None,
+                body: "<html><script>self.location='/zentao/user-login-abc.html';</script>",
+            }],
+            "cookie 无效或已过期",
             "",
         ),
     ];

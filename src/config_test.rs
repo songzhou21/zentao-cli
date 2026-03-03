@@ -39,7 +39,7 @@ fn load_optional_and_default_when_missing() {
     let got = load_or_default(&missing).expect("default load should succeed");
     assert!(got.url.is_empty());
     assert!(got.chrome_profile.is_none());
-    assert_eq!(got.cookie_source, CookieSource::File);
+    assert_eq!(got.cookie_source, CookieSource::Chrome);
 }
 
 // 非法 JSON 应返回“配置文件存在但无法解析”错误。
@@ -82,4 +82,8 @@ fn cookie_source_file_roundtrip() {
 
     let loaded = load_config(&path).expect("load should succeed");
     assert_eq!(loaded.cookie_source, CookieSource::File);
+
+    // Verify that the non-default value "file" IS serialized
+    let raw = std::fs::read_to_string(&path).expect("read should succeed");
+    assert!(raw.contains("cookie_source"), "non-default cookie_source should be serialized");
 }

@@ -134,7 +134,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 - 配置文件路径：`~/.zentao/config.json`
 - 字段：
   - `url`（可被 `--url` 覆盖）
-  - `cookie_source`：`chrome` 或 `file`（缺失时默认 `file`）
+  - `cookie_source`：`chrome` 或 `file`（缺失时默认 `chrome`）
   - `chrome_profile`（由 `zentao chrome profile` 写入；仅在 `cookie_source=chrome` 时生效）
 - Cookie 值持久化到 `~/.zentao/cookies`（Netscape cookie jar）
 - `config.json` 仅保存非敏感配置项（如 `url`、`cookie_source`、`chrome_profile`）

@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CookieSource {
-    #[default]
     File,
+    #[default]
     Chrome,
 }
 
@@ -64,7 +64,7 @@ pub fn load_or_default(path: &Path) -> Result<Config> {
 }
 
 fn is_default_cookie_source(source: &CookieSource) -> bool {
-    matches!(source, CookieSource::File)
+    matches!(source, CookieSource::Chrome)
 }
 
 #[cfg(test)]

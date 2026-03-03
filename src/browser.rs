@@ -104,7 +104,7 @@ pub fn load_zentao_cookie_from_chrome_macos(
     let mut stmt = conn
         .prepare(
             "SELECT name, value, encrypted_value, path, host_key, is_secure, is_httponly, expires_utc, creation_utc, last_access_utc \
-             FROM cookies WHERE host_key LIKE ? AND name IN ('za', 'zentaosid', 'zp')",
+             FROM cookies WHERE host_key LIKE ? AND name IN ('za', 'zentaosid', 'zp', 'keepLogin')",
         )
         .context("查询 Cookies 失败")?;
 
@@ -155,10 +155,15 @@ pub fn load_zentao_cookie_from_chrome_macos(
     let best_sid = choose_best_by_path(&candidates, "zentaosid");
     let best_zp = choose_best_by_path(&candidates, "zp")
         .ok_or_else(|| anyhow!("Chrome 中未找到匹配站点的 zp cookie"))?;
+    let best_keep = choose_best_by_path(&candidates, "keepLogin");
 
     let mut parts = Vec::new();
     let mut items = Vec::new();
 
+    if let Some(v) = best_keep {
+        parts.push(format!("keepLogin={}", v.value));
+        items.push(v.clone());
+    }
     if let Some(v) = best_za {
         parts.push(format!("za={}", v.value));
         items.push(v.clone());
