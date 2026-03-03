@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang='zh-cn'>
+<head>
+  <meta charset='utf-8'>
+  <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="renderer" content="webkit">
+  <title>BUG #48433  【系统测试】社群应用-其他管理员添加或删除应用后，群主或管理员进入社群会话页双击出现侧边栏时显示的应用不是最新编辑后的应用 - 享脉企业版 - 禅道</title>
+<script>window.config={"webRoot":"\/zentao\/","debug":false,"appName":"","cookieLife":30,"requestType":"PATH_INFO","requestFix":"-","moduleVar":"m","methodVar":"f","viewVar":"t","defaultView":"html","themeRoot":"\/zentao\/theme\/","currentModule":"bug","currentMethod":"view","clientLang":"zh-cn","requiredFields":"","router":"\/zentao\/index.php","save":"\u4fdd\u5b58","runMode":"","timeout":30000,"pingInterval":""};
+window.lang={"submitting":"\u7a0d\u5019...","save":"\u4fdd\u5b58","expand":"\u5c55\u5f00\u5168\u90e8","timeout":"\u8fde\u63a5\u8d85\u65f6\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u73af\u5883\uff0c\u6216\u91cd\u8bd5\uff01"};
+
+</script>
+<script>config.onlybody = "no";</script><link rel='stylesheet' href='/zentao/theme/default/zh-cn.default.css?v=12.5.1' type='text/css' media='screen' />
+<script src='/zentao/js/all.js?v=12.5.1'></script>
+<style>.ke-toolbar .ke-outline[data-name='savetemplate'] {display: none}
+#modulemenu .nav #dropMenu #searchResult .closed{text-decoration:none;}
+.nav #moreMenus{cursor: pointer;}
+
+#batchCreateForm .input-group, #batchEditForm .input-group,
+#batchCreateForm .input-group .form-control, #batchEditForm .input-group .form-control {position: static;}
+#batchCreateForm .input-group .colorpicker, #batchEditForm .input-group .colorpicker {z-index: 2;}
+#batchCreateForm .input-group .colorpicker.open, #batchEditForm .input-group .colorpicker.open {z-index: 5;}
+.content .stepTitle{display:block; color: green; margin:0px;}
+.table-fixed td{white-space: unset}
+.table-data tr > td{word-break: break-all; word-wrap: break-word;}
+.side-col .cell{padding:0px;}
+.tab-pane table {border: 1px solid #ddd; border-top: none;}
+#legendBasicInfo .thWidth{width:70px !important;}
+#legendLife .thWidth{width:90px !important;}
+</style><link rel='icon' href='/zentao/favicon.ico' type='image/x-icon' />
+<link rel='shortcut icon' href='/zentao/favicon.ico' type='image/x-icon' />
+<!--[if lt IE 10]>
+<script src='/zentao/js/jquery/placeholder/min.js?v=12.5.1'></script>
+<![endif]-->
+<script src='/zentao/js/fancybox/fancybox.umd.js?v=12.5.1'></script>
+<link rel='stylesheet' href='/zentao/js/fancybox/fancybox.css?v=12.5.1' type='text/css' media='screen' />
+</head>
+<body>
+<style>
+.picker-single .picker-selection-remove{z-index: 1000;}
+.picker-selection-single:after, .picker-multi.picker-focus .picker-selections:before{font-family: ZentaoIcon !important; content: '\f0d7' !important;}
+</style>
+<script>
+var chooseUsersToMail = '选择要发信通知的用户...';
+if($.fn.picker)
+{
+    $(document).ready(function()
+    {
+        $(".picker-select[data-pickertype!='remote']").picker({chosenMode: true});
+        $("[data-pickertype='remote']").each(function()
+        {
+            var pickerremote = $(this).attr('data-pickerremote');
+            $(this).picker({chosenMode: true, remote: pickerremote});
+        })
+    });
+}
+</script>
+<header id='header'>
+  <div id='mainHeader'>
+    <div class='container'>
+      <hgroup id='heading'>
+                <h1 id='companyname' title='享脉项目管理系统'><a href='/zentao/index.html' >享脉项目管理系统</a>
+</h1>
+      </hgroup>
+      <nav id='navbar'><ul class='nav nav-default'>
+<li  data-id='my'><a href='/zentao/my/' ><span> 我的地盘</span></a></li>
+<li  data-id='product'><a href='/zentao/product-index-no.html' >产品</a></li>
+<li  data-id='project'><a href='/zentao/project-index-no.html' >项目</a></li>
+<li class='active' data-id='qa'><a href='/zentao/qa/' class='active'>测试</a></li>
+<li class='divider'></li><li  data-id='ci'><a href='/zentao/repo-browse.html' >集成</a></li>
+<li  data-id='doc'><a href='/zentao/doc/' >文档</a></li>
+<li  data-id='report'><a href='/zentao/report/' >统计</a></li>
+<li class='divider'></li><li  data-id='company'><a href='/zentao/company/' >组织</a></li>
+</ul>
+</nav>
+      <div id='toolbar'>
+        <div id="userMenu">
+          <div id='searchbox'><div class='input-group'><div class='input-group-btn'><a data-toggle='dropdown' class='btn btn-link'><span id='searchTypeName'>Bug</span> <span class='caret'></span></a><input type='hidden' name='searchType' id='searchType' value='bug'  />
+<ul id='searchTypeMenu' class='dropdown-menu'><li class='selected'><a href='javascript:$.setSearchType("bug");' data-value='bug'>Bug</a></li><li ><a href='javascript:$.setSearchType("story");' data-value='story'>需求</a></li><li ><a href='javascript:$.setSearchType("task");' data-value='task'>任务</a></li><li ><a href='javascript:$.setSearchType("testcase");' data-value='testcase'>用例</a></li><li ><a href='javascript:$.setSearchType("project");' data-value='project'>项目</a></li><li ><a href='javascript:$.setSearchType("product");' data-value='product'>产品</a></li><li ><a href='javascript:$.setSearchType("user");' data-value='user'>用户</a></li><li ><a href='javascript:$.setSearchType("build");' data-value='build'>版本</a></li><li ><a href='javascript:$.setSearchType("release");' data-value='release'>发布</a></li><li ><a href='javascript:$.setSearchType("productplan");' data-value='productplan'>产品计划</a></li><li ><a href='javascript:$.setSearchType("testtask");' data-value='testtask'>测试单</a></li><li ><a href='javascript:$.setSearchType("doc");' data-value='doc'>文档</a></li><li ><a href='javascript:$.setSearchType("caselib");' data-value='caselib'>用例库</a></li><li ><a href='javascript:$.setSearchType("testreport");' data-value='testreport'>测试报告</a></li></ul></div><input id='searchInput' class='form-control search-input' type='search' onclick='this.value=""' onkeydown='if(event.keyCode==13) $.gotoObject();' placeholder='编号(ctrl+g)'/></div><a href='javascript:$.gotoObject();' class='btn btn-link' id='searchGo'>GO!</a></div>
+          <ul id="userNav" class="nav nav-default">
+            <li><a class='dropdown-toggle' data-toggle='dropdown'><span class='user-name'>周松</span><span class='caret'></span></a><ul class='dropdown-menu pull-right'><li class="user-profile-item"><a href='/zentao/my-profile.html' class=''><div class='avatar avatar bg-secondary avatar-circle'>Z</div>
+<div class="user-profile-name">周松</div><div class="user-profile-role">研发</div></a></li><li class="divider"></li><li><a href='/zentao/my-profile.html' >个人档案</a>
+</li><li><a href='/zentao/my-changepassword.html?onlybody=yes' class='iframe' data-width='500'>更改密码</a>
+</li><li class='divider'></li><li class='dropdown-submenu'><a href='javascript:;'>主题</a><ul class='dropdown-menu pull-left'><li class='selected'><a href='javascript:selectTheme("default");' data-value='default'>禅道蓝（默认）</a></li><li ><a href='javascript:selectTheme("green");' data-value='green'>叶兰绿</a></li><li ><a href='javascript:selectTheme("red");' data-value='red'>赤诚红</a></li><li ><a href='javascript:selectTheme("purple");' data-value='purple'>玉烟紫</a></li><li ><a href='javascript:selectTheme("pink");' data-value='pink'>芙蕖粉</a></li><li ><a href='javascript:selectTheme("blackberry");' data-value='blackberry'>露莓黑</a></li><li ><a href='javascript:selectTheme("classic");' data-value='classic'>经典蓝</a></li></ul></li><li class='dropdown-submenu'><a href='javascript:;'>Language</a><ul class='dropdown-menu pull-left'><li class='selected'><a href='javascript:selectLang("zh-cn");'>简体</a></li><li ><a href='javascript:selectLang("zh-tw");'>繁體</a></li><li ><a href='javascript:selectLang("en");'>English</a></li><li ><a href='javascript:selectLang("de");'>Deutsch</a></li><li ><a href='javascript:selectLang("fr");'>Français</a></li><li ><a href='javascript:selectLang("vi");'>Tiếng Việt</a></li><li ><a href='javascript:selectLang("ja");'>日本語</a></li></ul></li><li class='custom-item'><a href='/zentao/custom-ajaxMenu-bug-view.html?onlybody=yes' data-toggle='modal' data-type='iframe' data-icon='cog' data-width='80%'>自定义导航</a></li><li class="divider"></li><li class='dropdown-submenu'><a data-toggle='dropdown'>帮助</a><ul class='dropdown-menu pull-left'><li><a href='/zentao/tutorial-start.html' class='iframe' data-class-name='modal-inverse' data-width='800' data-headerless='true' data-backdrop='true' data-keyboard='true'>新手教程</a>
+</li><li><a href='https://www.zentao.net/book/zentaopmshelp.html?fullScreen=zentao' class='open-help-tab' target='_blank' rel='noopener noreferrer'>手册</a>
+</li><li><a href='/zentao/misc-changeLog.html' class='iframe' data-width='800' data-headerless='true' data-backdrop='true' data-keyboard='true'>修改日志</a>
+</li></ul></li>
+<li><a href='/zentao/misc-about.html' class='about iframe' data-width='1050' data-headerless='true' data-backdrop='true' data-keyboard='true' data-class='modal-about'>关于禅道</a>
+</li><li class="divider"></li><li><a href='/zentao/user-logout.html' >退出</a>
+</li></ul></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id='subHeader'>
+    <div class='container'>
+      <div id="pageNav" class='btn-toolbar'><div class="btn-group angle-btn"><div class="btn-group"><a href='/zentao/qa-index-no.html' class='btn'>测试主页</a>
+</div></div><div class='btn-group angle-btn'><div class='btn-group'><button data-toggle='dropdown' type='button' class='btn btn-limit' id='currentItem' title='享脉企业版'>享脉企业版 <span class='caret'></span></button><div id='dropMenu' class='dropdown-menu search-list' data-ride='searchList' data-url='/zentao/product-ajaxGetDropMenu-92-bug-browse-.html'><div class="input-control search-box has-icon-left has-icon-right search-example"><input type="search" class="form-control search-input" /><label class="input-control-icon-left search-icon"><i class="icon icon-search"></i></label><a class="input-control-icon-right search-clear-btn"><i class="icon icon-close icon-sm"></i></a></div></div></div></div></div>
+      <nav id='subNavbar'><ul class='nav nav-default'>
+<li class=' active' data-id='bug'><a href='/zentao/bug-browse-92.html' >Bug</a>
+</li>
+<li class='dropdown dropdown-hover ' data-id='testcase'><a href='/zentao/testcase-browse-92.html' >用例<span class='caret'></span></a>
+<ul class='dropdown-menu'><li class='' data-id='feature'><a href='/zentao/testcase-browse-92.html' >功能测试</a>
+</li></ul></li>
+<li class=' ' data-id='testtask'><a href='/zentao/testtask-browse-92.html' >测试单</a>
+</li>
+<li class=' ' data-id='testsuite'><a href='/zentao/testsuite-browse-92.html' >套件</a>
+</li>
+</ul>
+</nav>
+      <div id="pageActions"><div class='btn-toolbar'></div></div>
+    </div>
+  </div>
+  </header>
+
+<main id='main'  >
+  <div class='container'>
+<script src='/zentao/js/kindeditor/kindeditor.min.js?v=12.5.1'></script>
+<script src='/zentao/js/kindeditor/lang/zh_CN.js?v=12.5.1'></script>
+<script>
+(function($) {
+    var kuid = '69a6a99d24703';
+    var editor = {"id":["comment","lastComment"],"tools":"bugTools"};
+    var K = KindEditor;
+
+    var bugTools =
+    [ 'formatblock', 'fontname', 'fontsize', '|', 'forecolor', 'hilitecolor', 'bold', 'italic','underline', '|',
+    'justifyleft', 'justifycenter', 'justifyright', 'insertorderedlist', 'insertunorderedlist', '|',
+    'emoticons', 'image', 'code', 'link', '|', 'removeformat','undo', 'redo', 'fullscreen', 'source', 'about'];
+    var simpleTools =
+    [ 'formatblock', 'fontname', 'fontsize', '|', 'forecolor', 'hilitecolor', 'bold', 'italic','underline', '|',
+    'justifyleft', 'justifycenter', 'justifyright', 'insertorderedlist', 'insertunorderedlist', '|',
+    'emoticons', 'image', 'code', 'link', 'table', '|', 'removeformat','undo', 'redo', 'fullscreen', 'source', 'about'];
+    var fullTools =
+    [ 'formatblock', 'fontname', 'fontsize', 'lineheight', '|', 'forecolor', 'hilitecolor', '|', 'bold', 'italic','underline', 'strikethrough', '|',
+    'justifyleft', 'justifycenter', 'justifyright', 'justifyfull', '|',
+    'insertorderedlist', 'insertunorderedlist', '|',
+    'emoticons', 'image', 'insertfile', 'hr', '|', 'link', 'unlink', '/',
+    'undo', 'redo', '|', 'selectall', 'cut', 'copy', 'paste', '|', 'plainpaste', 'wordpaste', '|', 'removeformat', 'clearhtml','quickformat', '|',
+    'indent', 'outdent', 'subscript', 'superscript', '|',
+    'table', 'code', '|', 'pagebreak', 'anchor', '|',
+    'fullscreen', 'source', 'preview', 'about'];
+    var editorToolsMap = {fullTools: fullTools, simpleTools: simpleTools, bugTools: bugTools};
+
+    // Kindeditor default options
+    var editorDefaults =
+    {
+        cssPath: [config.themeRoot + 'zui/css/min.css'],
+        width: '100%',
+        height: '200px',
+        filterMode: true,
+        bodyClass: 'article-content',
+        urlType: 'absolute',
+        uploadJson: createLink('file', 'ajaxUpload', 'uid=' + kuid),
+        langType: 'zh_CN',
+        cssData: 'html,body {background: none}.article-content{overflow:visible}.article-content, .article-content table td, .article-content table th {line-height: 1.3846153846; font-size: 13px;}.article-content .table-auto {width: auto!important; max-width: 100%;}',
+        placeholder: "\u53ef\u4ee5\u5728\u7f16\u8f91\u5668\u76f4\u63a5\u8d34\u56fe\u3002",
+        placeholderStyle: {fontSize: '13px', color: '#888'},
+        pasteImage: {postUrl: createLink('file', 'ajaxPasteImage', 'uid=' + kuid)},
+        syncAfterBlur: true,
+        spellcheck: false
+    };
+
+    window.editor = {};
+
+    // Init kindeditor
+    var setKindeditor = function(element, options)
+    {
+        var $editor  = $(element);
+        var pasted   = false;
+        var editorID = $editor.attr('id');
+        options      = $.extend({}, editorDefaults, $editor.data(), options);
+        if(editorID === undefined)
+        {
+            editorID = 'kindeditor-' + $.zui.uuid();
+            $editor.attr('id', editorID);
+        }
+
+        var editorTool  = editorToolsMap[options.tools || editor.tools] || simpleTools;
+
+        /* Remove fullscreen in modal. */
+        if(config.onlybody == 'yes')
+        {
+            var newEditorTool = new Array();
+            for(i in editorTool)
+            {
+                if(editorTool[i] != 'fullscreen') newEditorTool.push(editorTool[i]);
+            }
+            editorTool = newEditorTool;
+        }
+
+        $.extend(options,
+        {
+            items: editorTool,
+            placeholder: $editor.attr('placeholder') || options.placeholder || '',
+            pasteImage: {postUrl: createLink('file', 'ajaxPasteImage', 'uid=' + kuid), placeholder: $editor.attr('placeholder') || "\u53ef\u4ee5\u5728\u7f16\u8f91\u5668\u76f4\u63a5\u8d34\u56fe\u3002"},
+        });
+
+        try
+        {
+            var keditor = K.create('#' + editorID, options);
+            window.editor['#'] = window.editor[editorID] = keditor;
+            $editor.data('keditor', keditor);
+            return keditor;
+        }
+        catch(e){return false;}
+    };
+
+    // Init kindeditor with jquery way
+    $.fn.kindeditor = function(options)
+    {
+        return this.each(function()
+        {
+            setKindeditor(this, options);
+        });
+    };
+
+    // Init all kindeditor
+    var initKindeditor = function(afterInit)
+    {
+        var $submitBtn = $('form :input[type=submit]');
+        if($submitBtn.length)
+        {
+            $submitBtn.next('#uid').remove();
+            $submitBtn.after("<input type='hidden' id='uid' name='uid' value=" + kuid + ">");
+        }
+        if($.isFunction(afterInit)) afterInit();
+        $.each(editor.id, function(key, editorID)
+        {
+            setKindeditor('#' + editorID);
+        });
+    };
+
+    // Init all kindeditors when document is ready
+    $(initKindeditor);
+}(jQuery));
+</script>
+<script>sysurl = "http:\/\/shendao.sharexm.cn";</script>
+<div id="mainMenu" class="clearfix">
+  <div class="btn-toolbar pull-left">
+        <a href='/zentao/my.html' class='btn btn-secondary'><i class="icon icon-back icon-sm"></i> 返回</a>
+    <div class="divider"></div>
+        <div class="page-title">
+      <span class="label label-id">48433</span>
+      <span class="text" title=" 【系统测试】社群应用-其他管理员添加或删除应用后，群主或管理员进入社群会话页双击出现侧边栏时显示的应用不是最新编辑后的应用" style='color: '> 【系统测试】社群应用-其他管理员添加或删除应用后，群主或管理员进入社群会话页双击出现侧边栏时显示的应用不是最新编辑后的应用</span>
+      	</div>
+  </div>
+    <div class="btn-toolbar pull-right">
+        <a href='/zentao/bug-create-92-0-moduleID=1099.html' class='btn btn-primary'><i class='icon icon-plus'></i>提Bug</a>
+      </div>
+  </div>
+<div id="mainContent" class="main-row">
+  <div class="main-col col-8">
+    <div class="cell">
+      <div class="detail">
+        <div class="detail-title">重现步骤</div>
+        <div class="detail-content article-content">
+          <p><br /></p>
+<p style="font-size:14px;background-color:#FFFFFF;"><span style="color:#E53333;"><span style="font-weight:700;">[基本信息]</span></span></p>
+<p style="font-size:14px;background-color:#FFFFFF;">测试环境：test</p>
+<p style="font-size:14px;background-color:#FFFFFF;">测试版本：1.13.31</p>
+<p style="font-size:14px;background-color:#FFFFFF;">测试账号：</p>
+<p style="font-size:14px;background-color:#FFFFFF;">发生时间：</p>
+<p style="font-size:14px;background-color:#FFFFFF;">网络环境：wifi</p>
+<p style="font-size:14px;background-color:#FFFFFF;">测试手机：</p>
+<p><span style="font-size:14px;color:#E53333;font-weight:700;background-color:#FFFFFF;">[步骤]</span></p>
+<p>&nbsp;1、群主A在社群会话页</p>
+<p>2、管理员B编辑社群应用，进行删除应用或添加应用操作</p>
+<p><span style="color:#E53333;font-size:14px;font-weight:700;background-color:#FFFFFF;">[结果]</span></p>
+<p>群主A双击会话页显示应用侧边栏，应用显示的不是编辑后的最新应用</p>
+<p><br /></p>
+<p><span style="color:#E53333;font-size:14px;font-weight:700;background-color:#FFFFFF;">[期望]&nbsp;</span></p>
+<p>双击会话页出现应用侧边栏时需要显示最新编辑后的应用</p>        </div>
+      </div>
+      <script type="text/javascript">
+  Fancybox.bind("[data-fancybox]", {
+  zoomEffect: false,
+  Carousel: {
+    Video:{
+      autoplay:true,
+    },
+    gestures: false,
+  },
+});
+</script>
+          </div>
+        <div class='cell'><div class="detail histories" id='actionbox' data-textDiff="文本格式" data-original="原始格式">
+<style>.histories-list > li{word-break: break-word; word-wrap: break-word;}</style>
+  <script>
+  $(function()
+  {
+      var diffButton = '<button type="button" class="btn btn-mini btn-icon btn-strip"><i class="icon icon-code icon-sm"></i></button>';
+      var newBoxID = '';
+      var oldBoxID = '';
+      $('blockquote.textdiff').each(function()
+      {
+          newBoxID = $(this).parent().attr('id');
+          if(newBoxID != oldBoxID)
+          {
+              oldBoxID = newBoxID;
+              if($(this).html() != $(this).next().html()) $(this).closest('.history-changes').before(diffButton);
+          }
+      });
+  });
+  </script>
+    <div class="detail-title">
+      历史记录 &nbsp;
+    <button type="button" class="btn btn-mini btn-icon btn-reverse" title='切换顺序'>
+      <i class="icon icon-arrow-up icon-sm"></i>
+    </button>
+    <button type="button" class="btn btn-mini btn-icon btn-expand-all" title='切换显示'>
+      <i class="icon icon-plus icon-sm"></i>
+    </button>
+      </div>
+      <div class="detail-content">
+      <ol class='histories-list'>
+                        <li value='1'>
+                2025-11-25 16:56:18, 由 <strong>石秀秀</strong> 创建。
+                      </li>
+                  <li value='2'>
+                2025-11-25 16:57:06, 由 <strong>石秀秀</strong> 编辑。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox3'>
+          修改了 <strong><i>重现步骤</i></strong>，区别为：
+<blockquote class='textdiff'>004- <del>测试版本：</del><br />
+004+ <ins>测试版本：1.13.31</ins></blockquote>
+<blockquote class='original'>004- <del>&lt;p style=&quot;font-size:14px;background-color:#FFFFFF;&quot;&gt;测试版本：&lt;/p&gt;</del><br />
+004+ <ins>&lt;p style=&quot;font-size:14px;background-color:#FFFFFF;&quot;&gt;测试版本：1.13.31&lt;/p&gt;</ins></blockquote>        </div>
+                      </li>
+                  <li value='3'>
+                2025-11-25 17:32:26, 由 <strong>李小龙</strong> 解决，方案为 <strong>设计如此</strong> 。                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox4'>
+          修改了 <strong><i>解决方案</i></strong>，旧值为 ""，新值为 "bydesign"。<br />
+修改了 <strong><i>解决版本</i></strong>，旧值为 ""，新值为 "922"。<br />
+修改了 <strong><i>解决日期</i></strong>，旧值为 ""，新值为 "2025-11-25 17:32:14"。<br />
+修改了 <strong><i>指派给   </i></strong>，旧值为 "lixiaolong"，新值为 "shixiuxiu"。<br />
+修改了 <strong><i>消耗工时</i></strong>，旧值为 "0"，新值为 "1"。<br />
+修改了 <strong><i>Bug状态   </i></strong>，旧值为 "active"，新值为 "resolved"。<br />
+修改了 <strong><i>是否确认</i></strong>，旧值为 "0"，新值为 "1"。<br />
+修改了 <strong><i>解决者   </i></strong>，旧值为 ""，新值为 "lixiaolong"。<br />
+        </div>
+                      </li>
+                  <li value='4'>
+                2025-11-26 14:04:11, 由 <strong>石秀秀</strong> 从版本 <strong><a href='/zentao/build-view-922-bug.html' >社群</a>
+</strong> 移除。                      </li>
+                  <li value='5'>
+                2025-11-26 14:04:11, 由 <strong>石秀秀</strong> 激活。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox6'>
+          修改了 <strong><i>指派给   </i></strong>，旧值为 "shixiuxiu"，新值为 "zhoul"。<br />
+修改了 <strong><i>Bug状态   </i></strong>，旧值为 "resolved"，新值为 "active"。<br />
+修改了 <strong><i>激活日期</i></strong>，旧值为 ""，新值为 "2025-11-26 14:04:11"。<br />
+修改了 <strong><i>激活次数</i></strong>，旧值为 "0"，新值为 "1"。<br />
+修改了 <strong><i>解决方案</i></strong>，旧值为 "bydesign"，新值为 ""。<br />
+修改了 <strong><i>解决日期</i></strong>，旧值为 "2025-11-25 17:32:14"，新值为 "0000-00-00"。<br />
+修改了 <strong><i>解决者   </i></strong>，旧值为 "lixiaolong"，新值为 ""。<br />
+修改了 <strong><i>解决版本</i></strong>，旧值为 "922"，新值为 ""。<br />
+修改了 <strong><i>关闭日期</i></strong>，旧值为 ""，新值为 "0000-00-00"。<br />
+        </div>
+                                <div class='article-content comment'>
+          <div class='comment-content'><p>听安卓开发-李小龙说：未避免接口调用频繁所以特意做成了 每次进入相同的聊天，都需要间隔10分钟才会去更新；</p>
+<p>目前安卓就会存在 PC端或其他管理员编辑后，当前用户没有及时同步显示最新。</p>
+<p>而IOS目前的实现是，每次进入会话都调用了接口，双击时或是点击底部打开菜单按钮时也都调用了接口。</p>
+<p>@周总，麻烦周总看看 两端实现是否需要统一一下。</p></div>
+        </div>
+                      </li>
+                  <li value='6'>
+                2025-11-26 14:28:35, 由 <strong>周磊</strong> 添加备注。
+                                <div class='article-content comment'>
+          <div class='comment-content'>三端统一吧，ios和安卓以及pc</div>
+        </div>
+                      </li>
+                  <li value='7'>
+                2025-11-26 14:28:49, 由 <strong>周磊</strong> 指派给 <strong>石秀秀</strong>。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox8'>
+          修改了 <strong><i>指派给</i></strong>，旧值为 "zhoul"，新值为 "shixiuxiu"。<br />
+        </div>
+                      </li>
+                  <li value='8'>
+                2025-11-26 14:29:21, 由 <strong>周磊</strong> 添加备注。
+                                <div class='article-content comment'>
+          <div class='comment-content'>按照安卓的统一，但是不急由主管安排统一时间</div>
+        </div>
+                      </li>
+                  <li value='9'>
+                2025-11-26 14:35:33, 由 <strong>石秀秀</strong> 指派给 <strong>刘阳</strong>。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox10'>
+          修改了 <strong><i>指派给</i></strong>，旧值为 "shixiuxiu"，新值为 "liuyang"。<br />
+        </div>
+                      </li>
+                  <li value='10'>
+                2025-11-26 14:40:15, 由 <strong>石秀秀</strong> 编辑。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox11'>
+          修改了 <strong><i>严重程度</i></strong>，旧值为 "2"，新值为 "3"。<br />
+修改了 <strong><i>优先级   </i></strong>，旧值为 "2"，新值为 "3"。<br />
+        </div>
+                      </li>
+                  <li value='11'>
+                2025-11-26 15:25:42, 由 <strong>石秀秀</strong> 指派给 <strong>石秀秀</strong>。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox12'>
+          修改了 <strong><i>指派给</i></strong>，旧值为 "liuyang"，新值为 "shixiuxiu"。<br />
+        </div>
+                      </li>
+                  <li value='12'>
+                2025-11-26 15:39:13, 由 <strong>石秀秀</strong> 指派给 <strong>刘阳</strong>。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox13'>
+          修改了 <strong><i>指派给</i></strong>，旧值为 "shixiuxiu"，新值为 "liuyang"。<br />
+        </div>
+                      </li>
+                  <li value='13'>
+                2025-12-05 09:36:05, 由 <strong>张晓琪</strong> 编辑。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox14'>
+          修改了 <strong><i>所属模块</i></strong>，旧值为 "1098"，新值为 "1099"。<br />
+        </div>
+                      </li>
+                  <li value='14'>
+                2026-03-02 17:46:56, 由 <strong>刘阳</strong> 指派给 <strong>周松</strong>。
+                <button type='button' class='btn btn-mini switch-btn btn-icon btn-expand' title='切换显示'><i class='change-show icon icon-plus icon-sm'></i></button>
+        <div class='history-changes' id='changeBox15'>
+          修改了 <strong><i>指派给</i></strong>，旧值为 "liuyang"，新值为 "zhousong"。<br />
+        </div>
+                      </li>
+          </ol>
+  </div>
+</div>
+</div>
+        <div class='main-actions'>
+      <div class="btn-toolbar">
+        <a href='/zentao/my.html' id='back' class='btn' title=返回[快捷键:Alt+↑]><i class="icon-goback icon-back"></i> 返回</a>
+                <div class='divider'></div>
+        <a href='/zentao/bug-assignTo-48433.html?onlybody=yes' class='btn btn-link iframe' ><i class='icon-bug-assignTo icon-hand-right'></i> <span class='text'>指派</span></a>
+<a href='/zentao/bug-resolve-48433.html?onlybody=yes' class='btn btn-link iframe showinonlybody' ><i class='icon-bug-resolve icon-checked'></i> <span class='text'>解决</span></a>
+<a href='/zentao/testcase-create-92-0-0-bug-48433.html' class='btn btn-link ' ><i class='icon-testcase-create icon-sitemap'></i> <span class='text'>建用例</span></a>
+<div class='divider'></div><a href='/zentao/bug-edit-48433.html' class='btn btn-link ' title='编辑Bug' ><i class='icon-common-edit icon-edit'></i></a><a href='/zentao/bug-create-92-0-bugID=48433.html' class='btn btn-link ' title='复制Bug' ><i class='icon-common-copy icon-copy'></i></a>              </div>
+    </div>
+  </div>
+  <div class="side-col col-4">
+    <div class="cell">
+      <div class='tabs'>
+        <ul class='nav nav-tabs'>
+          <li class='active'><a href='#legendBasicInfo' data-toggle='tab'>基本信息</a></li>
+                    <li><a href='#legendPrjStoryTask' data-toggle='tab'>项目/需求/任务</a></li>
+                  </ul>
+        <div class='tab-content'>
+          <div class='tab-pane active' id='legendBasicInfo'>
+            <table class="table table-data">
+              <tbody>
+                <tr valign='middle'>
+                  <th class='thWidth'>所属产品</th>
+                  <td><a href='/zentao/product-browse-92.html' >享脉企业版</a>
+</td>
+                </tr>
+                                <tr>
+                  <th>所属模块</th>
+                                    <td title='iOS'><a href='/zentao/bug-browse-92-0-byModule-1099.html' >iOS</a>
+</td>
+                </tr>
+                <tr valign='middle'>
+                  <th>所属计划</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>Bug类型</th>
+                  <td>代码缺陷</td>
+                </tr>
+                <tr>
+                                    <th>严重程度</th>
+                  <td>
+                                        <span class='label-severity' data-severity='3' title='3'></span>
+                                      </td>
+                </tr>
+                <tr>
+                  <th>优先级</th>
+                  <td><span class='label-pri label-pri-3' title='3'>3</span></td>
+                </tr>
+                <tr>
+                  <th>Bug状态</th>
+                  <td><span class='status-bug status-active'>激活</span></td>
+                </tr>
+                <tr>
+                  <th>激活次数</th>
+                  <td>1</td>
+                </tr>
+                <tr>
+                  <th>激活日期</th>
+                  <td>2025-11-26 14:04:11</td>
+                </tr>
+                <tr>
+                  <th>是否确认</th>
+                  <td>是</td>
+                </tr>
+                <tr>
+                  <th>当前指派</th>
+                  <td>周松 于 2026-03-02 17:46:56</td>
+                </tr>
+                <tr>
+                  <th>截止日期</th>
+                  <td>
+                    0000-00-00                  </td>
+                </tr>
+                <tr>
+                  <th>操作系统</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>浏览器</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>关键词</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>抄送给</th>
+                  <td> </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+                    <div class='tab-pane' id='legendPrjStoryTask'>
+            <table class='table table-data'>
+              <tbody>
+                <tr>
+                  <th class='w-60px'>所属项目</th>
+                  <td><a href='/zentao/project-browse-398.html' >享脉企业版项目</a>
+</td>
+                </tr>
+                <tr class='nofixed'>
+                  <th>相关需求</th>
+                  <td>
+                                      </td>
+                </tr>
+                <tr>
+                  <th>相关任务</th>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+                  </div>
+      </div>
+    </div>
+    <div class="cell">
+      <div class='tabs'>
+        <ul class='nav nav-tabs'>
+          <li class='active'><a href='#legendLife' data-toggle='tab'>Bug的一生</a></li>
+          <li><a href='#legendMisc' data-toggle='tab'>其他相关</a></li>
+        </ul>
+        <div class='tab-content'>
+          <div class='tab-pane active' id='legendLife'>
+            <table class="table table-data">
+              <tbody>
+                <tr>
+                  <th class='thWidth'>由谁创建</th>
+                  <td> 石秀秀 于 2025-11-25 16:56:17</td>
+                </tr>
+                <tr>
+                  <th>影响版本</th>
+                  <td>
+                    社群<br />                  </td>
+                </tr>
+                <tr>
+                  <th>由谁解决</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>消耗工时</th>
+                  <td>1</td>
+                </tr>
+                <tr>
+                  <th>解决版本</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>解决方案</th>
+                  <td>
+                                      </td>
+                </tr>
+                <tr>
+                  <th>由谁关闭</th>
+                  <td></td>
+                </tr>
+                <tr>
+                  <th>最后修改</th>
+                  <td>刘阳 于 2026-03-02 17:46:56</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class='tab-pane' id='legendMisc'>
+            <table class="table table-data">
+              <tbody>
+                <tr class='text-top'>
+                  <th class='w-80px'>相关Bug</th>
+                  <td>
+                                      </td>
+                </tr>
+                                                                                                              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+      </div>
+</div>
+
+<div id="mainActions" class='main-actions'>
+  <nav class='container'></nav></div>
+<link rel='stylesheet' href='/zentao/js/kindeditor/plugins/code/prettify.css?v=12.5.1' type='text/css' media='screen' />
+<script src='/zentao/js/kindeditor/plugins/code/prettify.js?v=12.5.1'></script>
+<script>
+$(window.prettyPrint);
+</script>
+</div><script>
+$.initSidebar();
+</script>
+
+<iframe frameborder='0' name='hiddenwin' id='hiddenwin' scrolling='no' class='debugwin hidden'></iframe>
+
+</main><footer id='footer'>
+  <div class="container">
+    <ul class='breadcrumb'><li><a href='/zentao/my/' >禅道</a>
+</li><li><a href='/zentao/qa/' >测试</a>
+</li><li class='active'><a href='/zentao/bug-browse-92.html' >享脉企业版</a>
+</li><li class='active'>Bug详情</li></ul>    <div id='poweredBy'>
+      <small class='muted'><a href='https://api.zentao.net/goto.php?item=aiux' class='link-aiux' target='_blank'>Designed by <strong>艾体验</strong></a></small> &nbsp;
+      <a href='https://www.zentao.net' target='_blank'><i class='icon-zentao'></i> 禅道12.5.1</a> &nbsp;
+      <a href='https://api.zentao.net/goto.php?item=proversion&from=footer' target='_blank' id='proLink' class='text-important'>专业版 <i class='text-danger icon-pro-version'></i></a> &nbsp;           </div>
+  </div>
+</footer>
+<div id="noticeBox"></div>
+<script>
+/* Alert got messages. */
+needPing = false;
+$(function()
+{
+    var windowBlur = false;
+    if(window.Notification)
+    {
+        window.onblur  = function(){windowBlur = true;}
+        window.onfocus = function(){windowBlur = false;}
+    }
+    setInterval(function()
+    {
+        $.get(createLink('message', 'ajaxGetMessage', "windowBlur=" + (windowBlur ? '1' : '0')), function(data)
+        {
+            if(!windowBlur)
+            {
+                $('#noticeBox').append(data);
+                adjustNoticePosition();
+            }
+            else
+            {
+                if(data)
+                {
+                    if(typeof data == 'string') data = $.parseJSON(data);
+                    if(typeof data.message == 'string') notifyMessage(data);
+                }
+            }
+        });
+    }, 180000);
+})
+
+</script>
+
+<script>$(function()
+{
+    var page = window.page || '';
+    var flow = window.flow;
+
+    $('#subNavbar a[data-toggle=dropdown]').parent().addClass('dropdown dropdown-hover');
+    if(page == 'create')
+    {
+        var productID  = $('#product').val();
+        var moduleID   = $('#module').val();
+        var assignedto = $('#assignedTo').val();
+        changeProductConfirmed = true;
+        oldStoryID             = $('#story').val() || 0;
+        oldProjectID           = 0;
+        oldOpenedBuild         = '';
+        oldTaskID              = $('#oldTaskID').val() || 0;
+        if(!assignedto) setAssignedTo(moduleID, productID);
+        notice();
+    }
+
+    if(page == 'create' || page == 'edit' || page == 'assignedto' || page == 'confirmbug')
+    {
+        oldProductID = $('#product').val();
+    }
+
+    if(window.flow != 'full')
+    {
+        $('.querybox-toggle').click(function()
+        {
+            $(this).parent().toggleClass('active');
+        });
+    }
+});
+
+/**
+ * Load all fields.
+ * 
+ * @param  int $productID 
+ * @access public
+ * @return void
+ */
+function loadAll(productID)
+{
+    if(page == 'create') 
+    {
+        loadProjectTeamMembers(productID);
+        setAssignedTo();
+    }
+
+    if(typeof(changeProductConfirmed) != 'undefined' && !changeProductConfirmed)
+    {
+        firstChoice = confirm(confirmChangeProduct);
+        changeProductConfirmed = true;    // Only notice the user one time.
+
+        if(!firstChoice)
+        {
+            $('#product').val(oldProductID);//Revert old product id if confirm is no.
+            $('#product').trigger("chosen:updated");
+            $('#product').chosen();
+            return true;
+        }
+
+        loadAll(productID);
+    }
+    else
+    {
+        $('#taskIdBox').innerHTML = '<select id="task"></select>';  // Reset the task.
+        $('#task').chosen();
+        loadProductBranches(productID)
+        loadProductModules(productID); 
+        loadProductProjects(productID); 
+        loadProductBuilds(productID);
+        loadProductplans(productID);
+        loadProductStories(productID);
+    }
+}
+
+/**
+ * Load by branch.
+ * 
+ * @access public
+ * @return void
+ */
+function loadBranch()
+{
+    $('#taskIdBox').innerHTML = '<select id="task"></select>';  // Reset the task.
+    $('#task').chosen();
+    productID = $('#product').val();
+    loadProductModules(productID);
+    loadProductProjects(productID); 
+    loadProductBuilds(productID);
+    loadProductplans(productID);
+    loadProductStories(productID);
+}
+
+/**
+  *Load all builds of one project or product.
+  *
+  * @param  object $object
+  * @access public
+  * @return void
+  */
+function loadAllBuilds(object)
+{
+    if(page == 'resolve')
+    {
+        oldResolvedBuild = $('#resolvedBuild').val() ? $('#resolvedBuild').val() : 0;
+        link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=resolvedBuild&build=' + oldResolvedBuild + '&branch=0&index=0&type=all');
+        $('#resolvedBuildBox').load(link, function(){$(this).find('select').chosen()});
+    }
+    else
+    {
+        productID = $('#product').val();
+        projectID = $('#project').val();
+
+        var buildBox = '';
+        if(page == 'edit') buildBox = $(object).closest('.input-group').attr('id');
+
+        if(projectID)
+        {
+            loadAllProjectBuilds(projectID, productID, buildBox);
+        }
+        else
+        {
+            loadAllProductBuilds(productID, buildBox);
+        }
+    }
+}
+
+/** 
+  * Load all builds of the project.
+  *
+  * @param  int    $projectID
+  * @param  int    $productID
+  * @param  string $buildBox
+  * @access public
+  * @return void
+  */
+function loadAllProjectBuilds(projectID, productID, buildBox)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    if(page == 'create')
+    {
+        oldOpenedBuild = $('#openedBuild').val() ? $('#openedBuild').val() : 0;
+        link = createLink('build', 'ajaxGetProjectBuilds', 'projectID=' + projectID + '&productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + '&branch=' + branch + '&index=0&needCreate=true&type=all');
+        $.get(link, function(data)
+        {
+            if(!data) data = '<select id="openedBuild" name="openedBuild" class="form-control" multiple=multiple></select>';
+            $('#openedBuild').replaceWith(data);
+            $('#openedBuild_chosen').remove();
+            $('#openedBuild').next('.picker').remove();
+            $("#openedBuild").chosen();
+            notice();
+        })
+    }
+    if(page == 'edit')
+    {
+        if(buildBox == 'openedBuildBox')
+        {
+            link = createLink('build', 'ajaxGetProjectBuilds', 'projectID=' + projectID + '&productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + '&branch=' + branch + '&index=0&needCreate=true&type=all');
+            $('#openedBuildBox').load(link, function(){$(this).find('select').chosen()});
+        }
+        if(buildBox == 'resolvedBuildBox')
+        {
+            link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=resolvedBuild&build=' + oldResolvedBuild + '&branch=' + branch + '&index=0&type=all');
+            $('#resolvedBuildBox').load(link, function(){$(this).find('select').chosen()});
+        }
+    }
+}
+
+/** 
+  * Load all builds of the product.
+  *
+  * @param  int    $productID
+  * @param  string $buildBox
+  * @access public
+  * @return void
+  */
+function loadAllProductBuilds(productID, buildBox)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    if(page == 'create') 
+    {
+        link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + '&branch=' + branch + '&index=0&type=all');
+        $.get(link, function(data)
+        {
+            if(!data) data = '<select id="openedBuild" name="openedBuild" class="form-control" multiple=multiple></select>';
+            $('#openedBuild').replaceWith(data);
+            $('#openedBuild_chosen').remove();
+            $('#openedBuild').next('.picker').remove();
+            $("#openedBuild").chosen();
+            notice();
+        })
+    }
+    if(page == 'edit')
+    {
+        if(buildBox == 'openedBuildBox')
+        {
+            link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + '&branch=' + branch + '&index=0&type=all');
+            $('#openedBuildBox').load(link, function(){$(this).find('select').chosen()});
+        }
+        if(buildBox == 'resolvedBuildBox')
+        {
+            link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=resolvedBuild&build=' + oldResolvedBuild + '&branch' + branch + '&index=0&type=all');
+            $('#resolvedBuildBox').load(link, function(){$(this).find('select').chosen()});
+        }
+    }
+}
+
+/**
+ * Load product's modules.
+ * 
+ * @param  int    $productID 
+ * @access public
+ * @return void
+ */
+function loadProductModules(productID)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    link = createLink('tree', 'ajaxGetOptionMenu', 'productID=' + productID + '&viewtype=bug&branch=' + branch + '&rootModuleID=0&returnType=html&fieldID=&needManage=true');
+    $('#moduleIdBox').load(link, function()
+    {   
+        $(this).find('select').chosen()
+        if(typeof(bugModule) == 'string') $('#moduleIdBox').prepend("<span class='input-group-addon' style='border-left-width: 1px;'>" + bugModule + "</span>");
+    });
+}
+
+/**
+ * Load product stories 
+ * 
+ * @param  int    $productID 
+ * @access public
+ * @return void
+ */
+function loadProductStories(productID)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    link = createLink('story', 'ajaxGetProductStories', 'productID=' + productID + '&branch=' + branch + '&moduleId=0&storyID=' + oldStoryID);
+    $('#storyIdBox').load(link, function(){$('#story').chosen();});
+}
+
+/**
+ * Load projects of product. 
+ * 
+ * @param  int    $productID 
+ * @access public
+ * @return void
+ */
+function loadProductProjects(productID)
+{
+    required = $('#project_chosen').hasClass('required');
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+
+    link = createLink('product', 'ajaxGetProjects', 'productID=' + productID + '&projectID=' + oldProjectID + '&branch=' + branch);
+    $('#projectIdBox').load(link, function()
+    {
+        $(this).find('select').chosen();
+        if(required) $(this).addClass('required');
+    });
+}
+
+/**
+ * Load product plans.
+ * 
+ * @param  productID $productID 
+ * @access public
+ * @return void
+ */
+function loadProductplans(productID)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    link = createLink('productplan', 'ajaxGetProductplans', 'productID=' + productID + '&branch=' + branch);
+    $('#planIdBox').load(link, function(){$(this).find('select').chosen()});
+}
+
+/**
+ * Load product builds. 
+ * 
+ * @param  productID $productID 
+ * @access public
+ * @return void
+ */
+function loadProductBuilds(productID)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + '&branch=' + branch);
+
+    if(page == 'create')
+    {
+        $.get(link, function(data)
+        {
+            if(!data) data = '<select id="openedBuild" name="openedBuild" class="form-control" multiple=multiple></select>';
+            $('#openedBuild').replaceWith(data);
+            $('#openedBuild_chosen').remove();
+            $('#openedBuild').next('.picker').remove();
+            $("#openedBuild").chosen();
+            notice();
+        })
+    }
+    else
+    {
+        $('#openedBuildBox').load(link, function(){$(this).find('select').chosen()});
+        link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=resolvedBuild&build=' + oldResolvedBuild + '&branch=' + branch);
+        $('#resolvedBuildBox').load(link, function(){$(this).find('select').chosen()});
+    }
+}
+
+/**
+ * Load project related bugs and tasks.
+ * 
+ * @param  int    $projectID 
+ * @access public
+ * @return void
+ */
+function loadProjectRelated(projectID)
+{
+    if(projectID)
+    {
+        loadProjectTasks(projectID);
+        loadProjectStories(projectID);
+        loadProjectBuilds(projectID);
+        loadAssignedTo(projectID);
+    }
+    else
+    {
+        $('#taskIdBox').innerHTML = '<select id="task"></select>';  // Reset the task.
+        loadProductStories($('#product').val());
+        loadProductBuilds($('#product').val());
+    }
+}
+
+/**
+ * Load project tasks.
+ * 
+ * @param  projectID $projectID 
+ * @access public
+ * @return void
+ */
+function loadProjectTasks(projectID)
+{
+    link = createLink('task', 'ajaxGetProjectTasks', 'projectID=' + projectID + '&taskID=' + oldTaskID);
+    $.post(link, function(data)
+    {
+        if(!data) data = '<select id="task" name="task" class="form-control"></select>';
+        $('#task').replaceWith(data);
+        $('#task_chosen').remove();
+        $('#task').next('.picker').remove();
+        $("#task").chosen();
+    })
+}
+
+/**
+ * Load project stories.
+ * 
+ * @param  projectID $projectID 
+ * @access public
+ * @return void
+ */
+function loadProjectStories(projectID)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    link = createLink('story', 'ajaxGetProjectStories', 'projectID=' + projectID + '&productID=' + $('#product').val() + '&branch=' + branch + '&moduleID=0&storyID=' + oldStoryID);
+    $('#storyIdBox').load(link, function(){$('#story').chosen();});
+}
+
+/**
+ * Load builds of a project.
+ * 
+ * @param  int      $projectID 
+ * @access public
+ * @return void
+ */
+function loadProjectBuilds(projectID)
+{
+    branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    productID = $('#product').val();
+    oldOpenedBuild = $('#openedBuild').val() ? $('#openedBuild').val() : 0;
+
+    if(page == 'create')
+    {
+        link = createLink('build', 'ajaxGetProjectBuilds', 'projectID=' + projectID + '&productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + "&branch=" + branch + "&index=0&needCreate=true");
+        $.get(link, function(data)
+        {
+            if(!data) data = '<select id="openedBuild" name="openedBuild" class="form-control" multiple=multiple></select>';
+            $('#openedBuild').replaceWith(data);
+            $('#openedBuild').val(oldOpenedBuild);
+            $('#openedBuild_chosen').remove();
+            $('#openedBuild').next('.picker').remove();
+            $("#openedBuild").chosen();
+            notice();
+        })
+    }
+    else
+    {
+        link = createLink('build', 'ajaxGetProjectBuilds', 'projectID=' + projectID + '&productID=' + productID + '&varName=openedBuild&build=' + oldOpenedBuild + '&branch=' + branch);
+        $('#openedBuildBox').load(link, function(){$(this).find('select').val(oldOpenedBuild).chosen()});
+        
+        oldResolvedBuild = $('#resolvedBuild').val() ? $('#resolvedBuild').val() : 0;
+        link = createLink('build', 'ajaxGetProductBuilds', 'productID=' + productID + '&varName=resolvedBuild&build=' + oldResolvedBuild + '&branch=' + branch);
+        $('#resolvedBuildBox').load(link, function(){$(this).find('select').val(oldResolvedBuild).chosen()});
+    }
+}
+
+/**
+ * Set story field.
+ * 
+ * @param  moduleID $moduleID 
+ * @param  productID $productID 
+ * @param  storyID $storyID
+ * @access public
+ * @return void
+ */
+function setStories(moduleID, productID, storyID)
+{
+    var branch = $('#branch').val();
+    if(typeof(branch) == 'undefined') branch = 0;
+    link = createLink('story', 'ajaxGetProductStories', 'productID=' + productID + '&branch=' + branch + '&moduleID=' + moduleID + '&storyID=' + storyID);
+    $.get(link, function(stories)
+    {
+        if(!stories) stories = '<select id="story" name="story" class="form-control"></select>';
+        $('#story').replaceWith(stories);
+        $('#story_chosen').remove();
+        $('#story').next('.picker').remove();
+        $("#story").chosen();
+    });
+}
+
+/**
+ * Load product branches.
+ * 
+ * @param  int $productID 
+ * @access public
+ * @return void
+ */
+function loadProductBranches(productID)
+{
+    $('#branch').remove();
+    $('#branch_chosen').remove();
+    $('#branch').next('.picker').remove();
+    $.get(createLink('branch', 'ajaxGetBranches', "productID=" + productID), function(data)
+    {
+        if(data)
+        {
+            $('#product').closest('.input-group').append(data);
+            $('#branch').css('width', page == 'create' ? '120px' : '65px');
+            $('#branch').chosen();
+        }
+    })
+}
+
+
+var oldAssignedToTitle = $("#assignedTo").find("option:selected").text();
+var oldAssignedTo      = $("#assignedTo").find("option:selected").val();
+
+/**
+ * Load team members of the project as assignedTo list.
+ *
+ * @param  int     $projectID 
+ * @access public
+ * @return void
+ */
+function loadAssignedTo(projectID, selectedUser)
+{
+    selectedUser = (typeof selectedUser == undefined) ? '' : $('#assignedTo').val();
+    link = createLink('bug', 'ajaxLoadAssignedTo', 'projectID=' + projectID + '&selectedUser=' + selectedUser);
+    $.get(link, function(data)
+    {
+        var defaultOption = '<option title="' + oldAssignedToTitle + '" value="' + oldAssignedTo + '" selected="selected">' + oldAssignedToTitle + '</option>';
+        $('#assignedTo_chosen').remove();
+        $('#assignedTo').next('.picker').remove();
+        $('#assignedTo').replaceWith(data);
+        var defaultAssignedTo = $('#assignedTo').val();
+        if(defaultAssignedTo !== oldAssignedTo && selectedUser == '') $('#assignedTo').append(defaultOption);
+        $('#assignedTo').chosen();
+    });
+}
+
+/**
+ * notice for create build.
+ * 
+ * @access public
+ * @return void
+ */
+function notice()
+{
+    $('#buildBoxActions').empty().hide();
+    if($('#openedBuild').find('option').length <= 1) 
+    {
+        var html = '';
+        if($('#project').length == 0 || $('#project').val() == '')
+        {
+            var branch = $('#branch').val();
+            if(typeof(branch) == 'undefined') branch = 0;
+            var link = createLink('release', 'create', 'productID=' + $('#product').val() + '&branch=' + branch); 
+            if(typeof(flow) != 'undefined' && flow == 'onlyTest') link = createLink('build', 'create','projectID=' + $('#product').val());
+            link += config.requestType == 'GET' ? '&onlybody=yes' : '?onlybody=yes';
+            html += '<a href="' + link + '" data-toggle="modal" data-type="iframe" style="padding-right:5px">' + createBuild + '</a> ';
+            html += '<a href="javascript:loadProductBuilds(' + $('#product').val() + ')">' + refresh + '</a>';
+        }
+        else
+        {
+            projectID = $('#project').val();
+            html += '<a href="' + createLink('build', 'create','projectID=' + projectID) + '" target="_blank" style="padding-right:5px">' + createBuild + '</a> ';
+            html += '<a href="javascript:loadProjectBuilds(' + projectID + ')">' + refresh + '</a>';
+        }
+        var $bba = $('#buildBoxActions');
+        if($bba.length)
+        {
+            $bba.html(html);
+            $bba.show();
+        }
+        else
+        {
+            if($('#buildBox').closest('tr').find('td').size() > 1)
+            {
+                $('#buildBox').closest('td').next().attr('id', 'buildBoxActions');
+                $('#buildBox').closest('td').next().html(html);
+            }
+            else
+            {
+                html = "<td id='buildBoxActions'>" + html + '</td>';
+                $('#buildBox').closest('td').after(html);
+            }
+        }
+    }
+}
+
+</script>
+</body>
+</html>

@@ -8,6 +8,7 @@ use url::Url;
 pub struct BugDetail {
     pub title: String,
     pub markdown_description: String,
+    pub markdown_history: String,
 }
 
 pub fn parse_bug_detail(page_url: &str, html: &str) -> Result<BugDetail> {
@@ -25,10 +26,12 @@ pub fn parse_bug_detail(page_url: &str, html: &str) -> Result<BugDetail> {
     let attachments = extract_attachment_urls(&doc, page_url)?;
     markdown = append_attachment_links(&markdown, &attachments);
     markdown = normalize_markdown(&markdown);
+    let history = extract_history_markdown(&doc)?;
 
     Ok(BugDetail {
         title,
         markdown_description: markdown,
+        markdown_history: history,
     })
 }
 
@@ -109,6 +112,13 @@ pub fn render_markdown(id: u64, detail: &BugDetail) -> String {
         out.push_str("(无)\n\n");
     } else {
         out.push_str(&detail.markdown_description);
+        out.push_str("\n\n");
+    }
+    out.push_str("## 历史记录\n\n");
+    if detail.markdown_history.trim().is_empty() {
+        out.push_str("(无)\n\n");
+    } else {
+        out.push_str(&detail.markdown_history);
         out.push_str("\n\n");
     }
     out
@@ -228,6 +238,25 @@ fn append_attachment_links(markdown: &str, attachment_urls: &[String]) -> String
         out.push_str(&format!("- [attachment#{}]({})\n", idx + 1, url));
     }
     out.trim_end().to_string()
+}
+
+fn extract_history_markdown(doc: &Html) -> Result<String> {
+    let list_sel = parse_selector("div.detail.histories ol.histories-list > li");
+
+    let mut lines = Vec::new();
+    for li in doc.select(&list_sel) {
+        let raw = li.text().collect::<Vec<_>>().join(" ");
+        let normalized = normalize_text_whitespace(&raw);
+        if !normalized.is_empty() {
+            lines.push(format!("- {}", normalized));
+        }
+    }
+
+    Ok(lines.join("\n"))
+}
+
+fn normalize_text_whitespace(input: &str) -> String {
+    input.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn absolutize_url(base: &Url, raw: &str) -> Result<String> {

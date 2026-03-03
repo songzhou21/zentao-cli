@@ -33,6 +33,12 @@ fn parse_real_48919_fixture() {
     assert!(detail
         .markdown_description
         .contains("![img#1](http://shendao.sharexm.cn/zentao/file-read-59561.png)"));
+    assert!(detail
+        .markdown_history
+        .contains("2025-12-11 11:25:47, 由 石秀秀 创建。"));
+    assert!(detail
+        .markdown_history
+        .contains("修改了 指派给 ，旧值为 \"liuyang\"，新值为 \"zhousong\"。"));
 }
 
 // 真实 bug 51267（正文含多图）应按顺序生成多张绝对地址图片。
@@ -61,6 +67,28 @@ fn parse_real_51267_multiple_images_fixture() {
     assert!(!detail.markdown_description.contains("Attachments:"));
     assert!(!detail.markdown_description.contains(r"\["));
     assert!(!detail.markdown_description.contains(r"\]"));
+    assert!(detail
+        .markdown_history
+        .contains("2026-02-24 13:58:13, 由 孙悦 创建。"));
+}
+
+// 真实 bug 48433（含长历史记录）应提取历史记录列表，避免回归丢段。
+#[test]
+fn parse_real_48433_history_fixture() {
+    let html = read_fixture("bug_48433_real.html");
+    let detail = parse_bug_detail(
+        "http://shendao.sharexm.cn/zentao/bug-view-48433.html",
+        &html,
+    )
+    .expect("parse should succeed");
+
+    assert!(detail.title.contains("社群应用"));
+    assert!(detail
+        .markdown_history
+        .contains("2025-11-25 16:56:18, 由 石秀秀 创建。"));
+    assert!(detail
+        .markdown_history
+        .contains("2026-03-02 17:46:56, 由 刘阳 指派给 周松 。"));
 }
 
 // 缺失标题时必须返回明确错误，防止静默输出脏数据。
@@ -152,17 +180,21 @@ fn render_markdown_should_have_sections() {
         &BugDetail {
             title: "标题".to_string(),
             markdown_description: "正文".to_string(),
+            markdown_history: "- 创建".to_string(),
         },
     );
     assert!(md.contains("# Bug #9 标题"));
     assert!(md.contains("## 描述"));
+    assert!(md.contains("## 历史记录"));
     assert!(md.contains("正文"));
+    assert!(md.contains("- 创建"));
 
     let empty = render_markdown(
         10,
         &BugDetail {
             title: "空描述".to_string(),
             markdown_description: "   ".to_string(),
+            markdown_history: "   ".to_string(),
         },
     );
     assert!(empty.contains("(无)"));
