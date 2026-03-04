@@ -28,6 +28,16 @@
 
 - 更多字段待补充
 
+## 搜索行为结论（2026-03-04）
+
+- 使用 `cookie_source=file`（`~/.zentao/cookies`）对同一组查询条件做了实测：
+  - `title=系统测试`
+  - `module=1099`
+  - `status=active`
+- 对比了 `title` 放在 `slot1` / `slot3` / `slot6` 三种 form 组合，返回结果一致（同页命中数与前序 Bug ID 一致）。
+- 对比了更多参数的跨 slot 组合（`module`、`status`、`assignedTo`、`resolvedDate >= / <=`），返回结果也一致。
+- 结论：在当前禅道实例下，查询条件的 **slot 序号本身不会改变搜索结果**；关键在于 `field/operator/value` 是否正确。
+
 ## 构建与运行
 
 ```bash

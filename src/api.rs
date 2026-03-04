@@ -467,6 +467,7 @@ fn summarize_login_response(raw: &str) -> String {
 /// slots that differ by operator:
 /// - `"assignedTo"` → slot 1 (operator `=`)
 /// - `"module"` → slot 1 (operator `belong`)
+/// - `"title"` → slot 3 (operator `include`)
 /// - `"resolvedDate_from"` → slot 2 (operator `>=`)
 /// - `"resolvedDate_to"` → slot 5 (operator `<=`)
 /// - `"status"` → slot 4 (operator `=`)
@@ -585,6 +586,12 @@ fn build_search_form(
         },
     ];
 
+    let slot_index_by_key: HashMap<&str, usize> = slots
+        .iter()
+        .enumerate()
+        .map(|(idx, slot)| (slot.match_key, idx))
+        .collect();
+
     // Apply overrides by match_key
     for (key, value) in field_overrides {
         if key == "module" {
@@ -593,11 +600,14 @@ fn build_search_form(
             slots[0].value = value.clone();
             continue;
         }
-        for slot in slots.iter_mut() {
-            if slot.match_key == key.as_str() {
-                slot.value = value.clone();
-                break;
-            }
+        if key == "title" {
+            slots[2].field = "title";
+            slots[2].operator = "include";
+            slots[2].value = value.clone();
+            continue;
+        }
+        if let Some(&idx) = slot_index_by_key.get(key.as_str()) {
+            slots[idx].value = value.clone();
         }
     }
 

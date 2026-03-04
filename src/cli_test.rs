@@ -117,6 +117,18 @@ fn search_cli_parse_json_flag() {
 }
 
 #[test]
+fn search_cli_parse_title_keyword() {
+    let cli = Cli::try_parse_from(["zentao", "search", "--title", "系统测试"]).expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(args.title.as_deref(), Some("系统测试"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
 fn search_cli_parse_page_size() {
     let cli = Cli::try_parse_from([
         "zentao",

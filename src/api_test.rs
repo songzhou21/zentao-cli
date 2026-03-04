@@ -334,6 +334,35 @@ fn build_search_form_resolved_by_promoted_to_slot1() {
     assert_eq!(find("value6"), Some(""));
 }
 
+#[test]
+fn build_search_form_with_title_keyword() {
+    let overrides = vec![
+        ("title".to_string(), "系统测试".to_string()),
+        ("module".to_string(), "1099".to_string()),
+        ("status".to_string(), "active".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("module"));
+    assert_eq!(find("operator1"), Some("belong"));
+    assert_eq!(find("value1"), Some("1099"));
+    assert_eq!(find("field3"), Some("title"));
+    assert_eq!(find("operator3"), Some("include"));
+    assert_eq!(find("value3"), Some("系统测试"));
+    assert_eq!(find("field4"), Some("status"));
+    assert_eq!(find("operator4"), Some("="));
+    assert_eq!(find("value4"), Some("active"));
+}
+
 // build_search_form 应将 product_id 填入 fieldproduct。
 #[test]
 fn build_search_form_product_id() {

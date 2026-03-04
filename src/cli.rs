@@ -130,6 +130,10 @@ struct ImageDownloadArgs {
 /// 搜索 Bug（支持按指派者、解决者、解决日期等条件筛选）
 #[derive(Debug, Args)]
 struct SearchArgs {
+    /// 标题关键词（包含匹配），例如 系统测试
+    #[arg(long, value_name = "KEYWORD")]
+    title: Option<String>,
+
     /// 指派给（用户名），例如 zhousong
     #[arg(long, value_name = "USER")]
     assigned_to: Option<String>,
@@ -430,6 +434,9 @@ fn run_search(args: SearchArgs) -> Result<()> {
     // Build field overrides from CLI args
     let mut field_params: Vec<(String, String)> = Vec::new();
 
+    if let Some(ref keyword) = args.title {
+        field_params.push(("title".to_string(), keyword.clone()));
+    }
     if let Some(ref user) = args.assigned_to {
         field_params.push(("assignedTo".to_string(), user.clone()));
     }
