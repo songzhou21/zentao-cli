@@ -14,6 +14,7 @@ use serde_json::Value;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
@@ -130,9 +131,13 @@ struct ImageDownloadArgs {
 /// 搜索 Bug（支持按指派者、解决者、解决日期等条件筛选）
 #[derive(Debug, Args)]
 struct SearchArgs {
-    /// 标题关键词（包含匹配），例如 系统测试
+    /// 标题关键词（包含匹配）。可重复传入，多个值按 OR 处理，例如 --title A --title B
     #[arg(long, value_name = "KEYWORD")]
-    title: Option<String>,
+    title: Vec<String>,
+
+    /// 标题 OR 关键词（兼容旧参数；建议改用重复 --title）
+    #[arg(long, value_name = "KEYWORD")]
+    title_or: Option<String>,
 
     /// 指派给（用户名），例如 zhousong
     #[arg(long, value_name = "USER")]
@@ -177,6 +182,10 @@ struct SearchArgs {
     /// 以 JSON 格式输出搜索结果
     #[arg(long)]
     json: bool,
+
+    /// 打印最终提交给 search-buildQuery 的表单参数（用于排查条件构造）
+    #[arg(long)]
+    debug: bool,
 
     /// 每页显示条数（通过 Cookie pagerBugBrowse 传给禅道）
     #[arg(long, value_name = "N", default_value_t = 20)]
@@ -411,6 +420,8 @@ fn run_image(args: ImageArgs) -> Result<()> {
 }
 
 fn run_search(args: SearchArgs) -> Result<()> {
+    validate_search_group_limits(&args)?;
+
     let cfg_path = resolve_config_path(args.config.as_deref())?;
     let cfg = config::load_config_optional(&cfg_path)?;
 
@@ -434,7 +445,24 @@ fn run_search(args: SearchArgs) -> Result<()> {
     // Build field overrides from CLI args
     let mut field_params: Vec<(String, String)> = Vec::new();
 
-    if let Some(ref keyword) = args.title {
+    let mut title_values: Vec<String> = args
+        .title
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if let Some(ref compat_title_or) = args.title_or {
+        let v = compat_title_or.trim();
+        if !v.is_empty() {
+            title_values.push(v.to_string());
+        }
+    }
+
+    if title_values.len() >= 2 {
+        for (idx, title) in title_values.iter().take(3).enumerate() {
+            field_params.push((format!("title_or_{}", idx + 1), title.clone()));
+        }
+    } else if let Some(keyword) = title_values.first() {
         field_params.push(("title".to_string(), keyword.clone()));
     }
     if let Some(ref user) = args.assigned_to {
@@ -454,6 +482,17 @@ fn run_search(args: SearchArgs) -> Result<()> {
     }
     if let Some(ref status) = args.bug_status {
         field_params.push(("status".to_string(), status.clone()));
+    }
+
+    if args.debug {
+        let debug_form = api_client.debug_search_form(DEFAULT_SEARCH_PRODUCT_ID, &field_params)?;
+        let compact_form = compact_debug_search_form(&debug_form);
+        eprintln!("[debug] search-buildQuery form (andOr1..formType):");
+        for line in render_compact_debug_form_lines(&compact_form) {
+            eprintln!("{}", line);
+        }
+        eprintln!("[debug] search-buildQuery lisp:");
+        eprintln!("{}", render_search_form_lisp(&compact_form));
     }
 
     let html = api_client.search_bugs(
@@ -497,6 +536,245 @@ fn run_search(args: SearchArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_search_group_limits(args: &SearchArgs) -> Result<()> {
+    // Zentao search-buildQuery uses 2 groups with 3 slots each:
+    // group1: slot1~3, group2: slot4~6.
+    let mut title_count = args.title.iter().filter(|v| !v.trim().is_empty()).count();
+    if args
+        .title_or
+        .as_deref()
+        .is_some_and(|v| !v.trim().is_empty())
+    {
+        title_count += 1;
+    }
+    let has_title_or = title_count >= 2;
+    if has_title_or {
+        let mut n = 0usize;
+        if args.module.is_some() {
+            n += 1;
+        }
+        if args.assigned_to.is_some() {
+            n += 1;
+        }
+        if args.resolved_by.is_some() {
+            n += 1;
+        }
+        if args.bug_status.is_some() {
+            n += 1;
+        }
+        if args.resolved_date_from.is_some() {
+            n += 1;
+        }
+        if args.resolved_date_to.is_some() {
+            n += 1;
+        }
+        if n > 3 {
+            return Err(anyhow!(
+                "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）",
+                n,
+                title_count
+            ));
+        }
+    } else {
+        let mut total = 0usize;
+        if args.module.is_some() {
+            total += 1;
+        }
+        if args.assigned_to.is_some() {
+            total += 1;
+        }
+        if args.resolved_by.is_some() {
+            total += 1;
+        }
+        if args.resolved_date_from.is_some() {
+            total += 1;
+        }
+        if title_count >= 1 {
+            total += 1;
+        }
+        if args.bug_status.is_some() {
+            total += 1;
+        }
+        if args.resolved_date_to.is_some() {
+            total += 1;
+        }
+        if total > 6 {
+            return Err(anyhow!(
+                "当前搜索条件超过 6 个（实际 {} 个），请减少条件",
+                total
+            ));
+        }
+    }
+    if title_count > 3 {
+        return Err(anyhow!(
+            "重复 --title 最多支持 3 个值（当前 {} 个）",
+            title_count
+        ));
+    }
+
+    Ok(())
+}
+
+fn compact_debug_search_form(form: &[(String, String)]) -> Vec<(String, String)> {
+    let keys = [
+        "andOr1",
+        "field1",
+        "operator1",
+        "value1",
+        "andOr2",
+        "field2",
+        "operator2",
+        "value2",
+        "andOr3",
+        "field3",
+        "operator3",
+        "value3",
+        "groupAndOr",
+        "andOr4",
+        "field4",
+        "operator4",
+        "value4",
+        "andOr5",
+        "field5",
+        "operator5",
+        "value5",
+        "andOr6",
+        "field6",
+        "operator6",
+        "value6",
+        "module",
+        "actionURL",
+        "groupItems",
+        "formType",
+    ];
+    let mut map: HashMap<&str, &str> = HashMap::new();
+    for (k, v) in form {
+        map.insert(k.as_str(), v.as_str());
+    }
+    keys.iter()
+        .filter_map(|k| {
+            map.get(k)
+                .map(|v| (k.to_string(), (*v).to_string()))
+        })
+        .collect()
+}
+
+fn render_search_form_lisp(form: &[(String, String)]) -> String {
+    #[derive(Clone)]
+    struct Clause {
+        and_or: String,
+        field: String,
+        operator: String,
+        value: String,
+    }
+
+    let map: HashMap<&str, &str> = form.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let clauses: Vec<Clause> = (1..=6)
+        .map(|n| Clause {
+            and_or: map
+                .get(format!("andOr{n}").as_str())
+                .copied()
+                .unwrap_or("")
+                .to_ascii_lowercase(),
+            field: map
+                .get(format!("field{n}").as_str())
+                .copied()
+                .unwrap_or("")
+                .to_string(),
+            operator: map
+                .get(format!("operator{n}").as_str())
+                .copied()
+                .unwrap_or("")
+                .to_string(),
+            value: map
+                .get(format!("value{n}").as_str())
+                .copied()
+                .unwrap_or("")
+                .to_string(),
+        })
+        .collect();
+
+    fn atom(c: &Clause) -> String {
+        let escaped = c.value.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("({} {} \"{}\")", c.field, c.operator, escaped)
+    }
+
+    fn group_expr(clauses: &[Clause]) -> Option<String> {
+        let filtered: Vec<&Clause> = clauses
+            .iter()
+            .filter(|c| !c.value.trim().is_empty() && !c.field.trim().is_empty())
+            .collect();
+        if filtered.is_empty() {
+            return None;
+        }
+        let mut expr = atom(filtered[0]);
+        for c in filtered.iter().skip(1) {
+            let op = if c.and_or == "or" { "or" } else { "and" };
+            expr = format!("({op} {expr} {})", atom(c));
+        }
+        Some(expr)
+    }
+
+    let g1 = group_expr(&clauses[0..3]);
+    let g2 = group_expr(&clauses[3..6]);
+    match (g1, g2) {
+        (Some(left), Some(right)) => {
+            let op = if map
+                .get("groupAndOr")
+                .copied()
+                .unwrap_or("and")
+                .eq_ignore_ascii_case("or")
+            {
+                "or"
+            } else {
+                "and"
+            };
+            format!("({op} {left} {right})")
+        }
+        (Some(expr), None) | (None, Some(expr)) => expr,
+        (None, None) => "()".to_string(),
+    }
+}
+
+fn render_compact_debug_form_lines(form: &[(String, String)]) -> Vec<String> {
+    let map: HashMap<&str, &str> = form.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let mut lines = Vec::new();
+
+    for n in 1..=6 {
+        let and_or = map.get(format!("andOr{n}").as_str()).copied();
+        let field = map.get(format!("field{n}").as_str()).copied();
+        let operator = map.get(format!("operator{n}").as_str()).copied();
+        let value = map.get(format!("value{n}").as_str()).copied();
+        if and_or.is_some() || field.is_some() || operator.is_some() || value.is_some() {
+            lines.push(format!(
+                "andOr{n}={} field{n}={} operator{n}={} value{n}={}",
+                and_or.unwrap_or(""),
+                field.unwrap_or(""),
+                operator.unwrap_or(""),
+                value.unwrap_or("")
+            ));
+        }
+        if n == 3 && map.contains_key("groupAndOr") {
+            lines.push(format!("groupAndOr={}", map["groupAndOr"]));
+        }
+    }
+
+    if let Some(v) = map.get("module").copied() {
+        lines.push(format!("module={v}"));
+    }
+    if let Some(v) = map.get("actionURL").copied() {
+        lines.push(format!("actionURL={v}"));
+    }
+    if let Some(v) = map.get("groupItems").copied() {
+        lines.push(format!("groupItems={v}"));
+    }
+    if let Some(v) = map.get("formType").copied() {
+        lines.push(format!("formType={v}"));
+    }
+
+    lines
 }
 
 fn run_bug_show(args: BugShowArgs) -> Result<()> {

@@ -274,10 +274,10 @@ fn build_search_form_with_overrides() {
     assert_eq!(find("operator2"), Some(">="));
     assert_eq!(find("value2"), Some("2025-01-01"));
 
-    // Slot 5: resolvedDate <= 2025-12-31
-    assert_eq!(find("field5"), Some("resolvedDate"));
-    assert_eq!(find("operator5"), Some("<="));
-    assert_eq!(find("value5"), Some("2025-12-31"));
+    // Slot 3: resolvedDate <= 2025-12-31
+    assert_eq!(find("field3"), Some("resolvedDate"));
+    assert_eq!(find("operator3"), Some("<="));
+    assert_eq!(find("value3"), Some("2025-12-31"));
 
     // Slot 6: resolvedBy 保持空值
     assert_eq!(find("field6"), Some("resolvedBy"));
@@ -307,9 +307,44 @@ fn build_search_form_with_module_and_status() {
     assert_eq!(find("operator1"), Some("belong"));
     assert_eq!(find("value1"), Some("1099"));
 
-    assert_eq!(find("field4"), Some("status"));
-    assert_eq!(find("operator4"), Some("="));
-    assert_eq!(find("value4"), Some("active"));
+    assert_eq!(find("field2"), Some("status"));
+    assert_eq!(find("operator2"), Some("="));
+    assert_eq!(find("value2"), Some("active"));
+}
+
+#[test]
+fn build_search_form_with_module_status_and_assigned_to() {
+    let overrides = vec![
+        ("module".to_string(), "1099".to_string()),
+        ("status".to_string(), "active".to_string()),
+        ("assignedTo".to_string(), "zhousong".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    // module remains on slot1
+    assert_eq!(find("field1"), Some("module"));
+    assert_eq!(find("operator1"), Some("belong"));
+    assert_eq!(find("value1"), Some("1099"));
+
+    // assignedTo is moved to an alternate slot instead of overriding module value
+    assert_eq!(find("field2"), Some("assignedTo"));
+    assert_eq!(find("operator2"), Some("="));
+    assert_eq!(find("value2"), Some("zhousong"));
+
+    // status keeps working
+    assert_eq!(find("field3"), Some("status"));
+    assert_eq!(find("operator3"), Some("="));
+    assert_eq!(find("value3"), Some("active"));
 }
 
 // 当仅设置 resolvedBy 时，应将 resolvedBy 放在 slot1（对齐 Zentao 页面行为）。
@@ -355,12 +390,92 @@ fn build_search_form_with_title_keyword() {
     assert_eq!(find("field1"), Some("module"));
     assert_eq!(find("operator1"), Some("belong"));
     assert_eq!(find("value1"), Some("1099"));
-    assert_eq!(find("field3"), Some("title"));
-    assert_eq!(find("operator3"), Some("include"));
-    assert_eq!(find("value3"), Some("系统测试"));
-    assert_eq!(find("field4"), Some("status"));
-    assert_eq!(find("operator4"), Some("="));
-    assert_eq!(find("value4"), Some("active"));
+    assert_eq!(find("field2"), Some("title"));
+    assert_eq!(find("operator2"), Some("include"));
+    assert_eq!(find("value2"), Some("系统测试"));
+    assert_eq!(find("field3"), Some("status"));
+    assert_eq!(find("operator3"), Some("="));
+    assert_eq!(find("value3"), Some("active"));
+}
+
+#[test]
+fn build_search_form_with_title_or_group() {
+    let overrides = vec![
+        ("module".to_string(), "1099".to_string()),
+        ("status".to_string(), "active".to_string()),
+        ("title_or_1".to_string(), "系统测试".to_string()),
+        ("title_or_2".to_string(), "线上问题".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    // Group 1: module + status
+    assert_eq!(find("field1"), Some("module"));
+    assert_eq!(find("operator1"), Some("belong"));
+    assert_eq!(find("value1"), Some("1099"));
+    assert_eq!(find("field2"), Some("status"));
+    assert_eq!(find("operator2"), Some("="));
+    assert_eq!(find("value2"), Some("active"));
+
+    // Group bridge + Group 2: title include A or B
+    assert_eq!(find("groupAndOr"), Some("and"));
+    assert_eq!(find("field4"), Some("title"));
+    assert_eq!(find("operator4"), Some("include"));
+    assert_eq!(find("value4"), Some("系统测试"));
+    assert_eq!(find("andOr5"), Some("or"));
+    assert_eq!(find("field5"), Some("title"));
+    assert_eq!(find("operator5"), Some("include"));
+    assert_eq!(find("value5"), Some("线上问题"));
+}
+
+#[test]
+fn build_search_form_with_title_or_mixed_with_assigned_and_date_range() {
+    let overrides = vec![
+        ("assignedTo".to_string(), "zhousong".to_string()),
+        ("resolvedDate_from".to_string(), "2025-11-14".to_string()),
+        ("resolvedDate_to".to_string(), "2025-11-22".to_string()),
+        ("title_or_1".to_string(), "系统测试".to_string()),
+        ("title_or_2".to_string(), "线上问题".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    // Group 1 (slot1~3): non-title filters
+    assert_eq!(find("field1"), Some("assignedTo"));
+    assert_eq!(find("operator1"), Some("="));
+    assert_eq!(find("value1"), Some("zhousong"));
+    assert_eq!(find("field2"), Some("resolvedDate"));
+    assert_eq!(find("operator2"), Some(">="));
+    assert_eq!(find("value2"), Some("2025-11-14"));
+    assert_eq!(find("field3"), Some("resolvedDate"));
+    assert_eq!(find("operator3"), Some("<="));
+    assert_eq!(find("value3"), Some("2025-11-22"));
+
+    // Group bridge + Group 2 title OR
+    assert_eq!(find("groupAndOr"), Some("and"));
+    assert_eq!(find("field4"), Some("title"));
+    assert_eq!(find("operator4"), Some("include"));
+    assert_eq!(find("value4"), Some("系统测试"));
+    assert_eq!(find("andOr5"), Some("or"));
+    assert_eq!(find("field5"), Some("title"));
+    assert_eq!(find("operator5"), Some("include"));
+    assert_eq!(find("value5"), Some("线上问题"));
 }
 
 // build_search_form 应将 product_id 填入 fieldproduct。
@@ -374,6 +489,51 @@ fn build_search_form_product_id() {
     };
     assert_eq!(find("fieldproduct"), Some("123"));
     assert_eq!(find("formType"), Some("more123-0-bySearch-myQueryID.html"));
+}
+
+#[test]
+fn compact_search_form_for_submit_removes_empty_slots_and_group_and_or() {
+    let form = vec![
+        ("andOr1".to_string(), "AND".to_string()),
+        ("field1".to_string(), "module".to_string()),
+        ("operator1".to_string(), "belong".to_string()),
+        ("value1".to_string(), "1099".to_string()),
+        ("andOr2".to_string(), "and".to_string()),
+        ("field2".to_string(), "assignedTo".to_string()),
+        ("operator2".to_string(), "=".to_string()),
+        ("value2".to_string(), "zhousong".to_string()),
+        ("andOr3".to_string(), "and".to_string()),
+        ("field3".to_string(), "status".to_string()),
+        ("operator3".to_string(), "=".to_string()),
+        ("value3".to_string(), "active".to_string()),
+        ("groupAndOr".to_string(), "and".to_string()),
+        ("andOr4".to_string(), "AND".to_string()),
+        ("field4".to_string(), "status".to_string()),
+        ("operator4".to_string(), "=".to_string()),
+        ("value4".to_string(), "".to_string()),
+        ("andOr5".to_string(), "and".to_string()),
+        ("field5".to_string(), "resolvedDate".to_string()),
+        ("operator5".to_string(), "<=".to_string()),
+        ("value5".to_string(), "".to_string()),
+        ("andOr6".to_string(), "and".to_string()),
+        ("field6".to_string(), "resolvedBy".to_string()),
+        ("operator6".to_string(), "=".to_string()),
+        ("value6".to_string(), "".to_string()),
+        ("module".to_string(), "bug".to_string()),
+        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        ("groupItems".to_string(), "3".to_string()),
+        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+    ];
+
+    let compact = compact_search_form_for_submit(form);
+    let has = |k: &str| compact.iter().any(|(key, _)| key == k);
+    assert!(has("andOr1"));
+    assert!(has("field1"));
+    assert!(has("value3"));
+    assert!(!has("andOr6"));
+    assert!(!has("field6"));
+    assert!(!has("value6"));
+    assert!(!has("groupAndOr"));
 }
 
 // set_form_value 应能替换已有 key 的值。

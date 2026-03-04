@@ -103,13 +103,21 @@ fn image_download_cli_requires_url() {
 
 #[test]
 fn search_cli_parse_json_flag() {
-    let cli = Cli::try_parse_from(["zentao", "search", "--assigned-to", "zhousong", "--json"])
-        .expect("should parse");
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "search",
+        "--assigned-to",
+        "zhousong",
+        "--json",
+        "--debug",
+    ])
+    .expect("should parse");
 
     match cli.command {
         Commands::Search(args) => {
             assert_eq!(args.assigned_to.as_deref(), Some("zhousong"));
             assert!(args.json);
+            assert!(args.debug);
             assert_eq!(args.page_size, 20);
         }
         _ => panic!("unexpected command"),
@@ -122,7 +130,45 @@ fn search_cli_parse_title_keyword() {
 
     match cli.command {
         Commands::Search(args) => {
-            assert_eq!(args.title.as_deref(), Some("系统测试"));
+            assert_eq!(args.title, vec!["系统测试".to_string()]);
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn search_cli_parse_title_or_keyword() {
+    let cli =
+        Cli::try_parse_from(["zentao", "search", "--title", "系统测试", "--title-or", "线上问题"])
+            .expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(args.title, vec!["系统测试".to_string()]);
+            assert_eq!(args.title_or.as_deref(), Some("线上问题"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn search_cli_parse_repeated_title_keywords() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "search",
+        "--title",
+        "系统测试",
+        "--title",
+        "线上问题",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Search(args) => {
+            assert_eq!(
+                args.title,
+                vec!["系统测试".to_string(), "线上问题".to_string()]
+            );
         }
         _ => panic!("unexpected command"),
     }
@@ -212,6 +258,205 @@ fn search_cli_parse_group() {
         }
         _ => panic!("unexpected command"),
     }
+}
+
+#[test]
+fn compact_debug_search_form_only_keeps_expected_keys() {
+    let form = vec![
+        ("fieldtitle".to_string(), "".to_string()),
+        ("andOr1".to_string(), "AND".to_string()),
+        ("field1".to_string(), "module".to_string()),
+        ("operator1".to_string(), "belong".to_string()),
+        ("value1".to_string(), "1099".to_string()),
+        ("groupAndOr".to_string(), "and".to_string()),
+        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+    ];
+
+    let compact = compact_debug_search_form(&form);
+    assert_eq!(compact.first().map(|x| x.0.as_str()), Some("andOr1"));
+    assert_eq!(compact.last().map(|x| x.0.as_str()), Some("formType"));
+    assert!(
+        compact.iter().all(|(_, v)| !v.is_empty()),
+        "should only keep keys present in original form"
+    );
+    assert!(
+        compact.iter().all(|(k, _)| k != "fieldtitle"),
+        "should not include default header fields"
+    );
+}
+
+#[test]
+fn render_search_form_lisp_outputs_grouped_expression() {
+    let form = vec![
+        ("andOr1".to_string(), "AND".to_string()),
+        ("field1".to_string(), "module".to_string()),
+        ("operator1".to_string(), "belong".to_string()),
+        ("value1".to_string(), "1099".to_string()),
+        ("andOr2".to_string(), "and".to_string()),
+        ("field2".to_string(), "assignedTo".to_string()),
+        ("operator2".to_string(), "=".to_string()),
+        ("value2".to_string(), "zhousong".to_string()),
+        ("andOr3".to_string(), "and".to_string()),
+        ("field3".to_string(), "status".to_string()),
+        ("operator3".to_string(), "=".to_string()),
+        ("value3".to_string(), "active".to_string()),
+        ("groupAndOr".to_string(), "and".to_string()),
+        ("andOr4".to_string(), "AND".to_string()),
+        ("field4".to_string(), "status".to_string()),
+        ("operator4".to_string(), "=".to_string()),
+        ("value4".to_string(), "".to_string()),
+        ("andOr5".to_string(), "and".to_string()),
+        ("field5".to_string(), "resolvedDate".to_string()),
+        ("operator5".to_string(), "<=".to_string()),
+        ("value5".to_string(), "".to_string()),
+        ("andOr6".to_string(), "and".to_string()),
+        ("field6".to_string(), "resolvedBy".to_string()),
+        ("operator6".to_string(), "=".to_string()),
+        ("value6".to_string(), "".to_string()),
+        ("module".to_string(), "bug".to_string()),
+        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        ("groupItems".to_string(), "3".to_string()),
+        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+    ];
+
+    let got = render_search_form_lisp(&form);
+    assert_eq!(
+        got,
+        "(and (and (module belong \"1099\") (assignedTo = \"zhousong\")) (status = \"active\"))"
+    );
+}
+
+#[test]
+fn render_compact_debug_form_lines_outputs_slot_on_single_line() {
+    let form = vec![
+        ("andOr1".to_string(), "AND".to_string()),
+        ("field1".to_string(), "module".to_string()),
+        ("operator1".to_string(), "belong".to_string()),
+        ("value1".to_string(), "1099".to_string()),
+        ("andOr2".to_string(), "and".to_string()),
+        ("field2".to_string(), "assignedTo".to_string()),
+        ("operator2".to_string(), "=".to_string()),
+        ("value2".to_string(), "zhousong".to_string()),
+        ("andOr3".to_string(), "and".to_string()),
+        ("field3".to_string(), "status".to_string()),
+        ("operator3".to_string(), "=".to_string()),
+        ("value3".to_string(), "active".to_string()),
+        ("groupAndOr".to_string(), "and".to_string()),
+        ("andOr4".to_string(), "AND".to_string()),
+        ("field4".to_string(), "status".to_string()),
+        ("operator4".to_string(), "=".to_string()),
+        ("value4".to_string(), "".to_string()),
+        ("andOr5".to_string(), "and".to_string()),
+        ("field5".to_string(), "resolvedDate".to_string()),
+        ("operator5".to_string(), "<=".to_string()),
+        ("value5".to_string(), "".to_string()),
+        ("andOr6".to_string(), "and".to_string()),
+        ("field6".to_string(), "resolvedBy".to_string()),
+        ("operator6".to_string(), "=".to_string()),
+        ("value6".to_string(), "".to_string()),
+        ("module".to_string(), "bug".to_string()),
+        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        ("groupItems".to_string(), "3".to_string()),
+        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+    ];
+
+    let lines = render_compact_debug_form_lines(&form);
+    assert_eq!(
+        lines[0],
+        "andOr1=AND field1=module operator1=belong value1=1099"
+    );
+    assert_eq!(lines[3], "groupAndOr=and");
+}
+
+#[test]
+fn render_compact_debug_form_lines_skips_missing_slots() {
+    let form = vec![
+        ("andOr1".to_string(), "AND".to_string()),
+        ("field1".to_string(), "module".to_string()),
+        ("operator1".to_string(), "belong".to_string()),
+        ("value1".to_string(), "1099".to_string()),
+        ("module".to_string(), "bug".to_string()),
+        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        ("groupItems".to_string(), "3".to_string()),
+        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+    ];
+
+    let lines = render_compact_debug_form_lines(&form);
+    assert_eq!(lines[0], "andOr1=AND field1=module operator1=belong value1=1099");
+    assert!(lines.iter().all(|l| !l.starts_with("andOr2=")));
+    assert!(lines.iter().all(|l| !l.starts_with("groupAndOr=")));
+}
+
+#[test]
+fn validate_search_group_limits_accepts_title_or_two_groups() {
+    let args = SearchArgs {
+        title: vec!["系统测试".to_string()],
+        title_or: Some("线上问题".to_string()),
+        assigned_to: None,
+        resolved_by: None,
+        resolved_date_from: None,
+        resolved_date_to: None,
+        module: Some("1099".to_string()),
+        bug_status: Some("active".to_string()),
+        group: None,
+        url: None,
+        profile: None,
+        config: None,
+        json: false,
+        debug: false,
+        page_size: 20,
+    };
+
+    let got = validate_search_group_limits(&args);
+    assert!(got.is_ok(), "should pass group limit validation: {got:?}");
+}
+
+#[test]
+fn validate_search_group_limits_accepts_title_or_with_assigned_and_date() {
+    let args = SearchArgs {
+        title: vec!["系统测试".to_string(), "线上问题".to_string()],
+        title_or: None,
+        assigned_to: Some("zhousong".to_string()),
+        resolved_by: None,
+        resolved_date_from: Some("2025-11-14".to_string()),
+        resolved_date_to: Some("2025-11-22".to_string()),
+        module: None,
+        bug_status: None,
+        group: None,
+        url: None,
+        profile: None,
+        config: None,
+        json: false,
+        debug: false,
+        page_size: 20,
+    };
+
+    let got = validate_search_group_limits(&args);
+    assert!(got.is_ok(), "should pass group limit validation: {got:?}");
+}
+
+#[test]
+fn validate_search_group_limits_rejects_title_or_with_too_many_group1_filters() {
+    let args = SearchArgs {
+        title: vec!["系统测试".to_string(), "线上问题".to_string()],
+        title_or: None,
+        assigned_to: Some("zhousong".to_string()),
+        resolved_by: Some("lisi".to_string()),
+        resolved_date_from: Some("2025-11-14".to_string()),
+        resolved_date_to: Some("2025-11-22".to_string()),
+        module: Some("1099".to_string()),
+        bug_status: Some("active".to_string()),
+        group: None,
+        url: None,
+        profile: None,
+        config: None,
+        json: false,
+        debug: false,
+        page_size: 20,
+    };
+
+    let err = validate_search_group_limits(&args).expect_err("should reject");
+    assert!(err.to_string().contains("每个搜索 group 最多支持 3 个条件"));
 }
 
 #[test]

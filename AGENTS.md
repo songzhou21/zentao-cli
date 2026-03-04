@@ -24,6 +24,13 @@
 - `resolved_date_from`（解决日期起始，含）
 - `resolved_date_to`（解决日期截止，含）
 
+## 搜索分组限制
+
+- 禅道查询采用两组条件：`group1`（slot1~3）与 `group2`（slot4~6），两组由 `groupAndOr` 连接。
+- **每个 group 最多支持 3 个搜索条件**（对应 3 个 slot）。
+- `--title` 支持重复传入，重复值按 OR 处理（最多 3 个标题）。
+- 标题 OR 条件可与 `module` / `bug_status` / `assigned_to` / `resolved_by` / `resolved_date_from` / `resolved_date_to` 混用；超出每组 3 条时会报错。
+
 ## TODO（搜索字段）
 
 - 更多字段待补充
@@ -134,6 +141,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 # 16) 输出 JSON（便于脚本消费）
 ./target/release/zentao search --assigned-to zhousong --json
+
+# 17) 打印 search-buildQuery 调试信息（精简 form + Lisp 条件树）
+./target/release/zentao search --module 1099 --bug-status active \
+  --assigned-to zhousong --debug
 ```
 
 `--group` 说明：

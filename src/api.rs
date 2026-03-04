@@ -95,7 +95,7 @@ impl ZentaoApi {
         );
 
         // Build the full form body with defaults + user-provided field overrides
-        let form = build_search_form(product_id, &action_url, form_params);
+        let form = compact_search_form_for_submit(build_search_form(product_id, &action_url, form_params));
 
         let resp = self
             .client
@@ -167,6 +167,25 @@ impl ZentaoApi {
         }
 
         Ok(body)
+    }
+
+    pub fn debug_search_form(
+        &self,
+        product_id: u64,
+        form_params: &[(String, String)],
+    ) -> Result<Vec<(String, String)>> {
+        let path_prefix = reqwest::Url::parse(&self.site_url)
+            .map(|u| u.path().trim_end_matches('/').to_string())
+            .unwrap_or_default();
+        let action_url = format!(
+            "{}/bug-browse-{}-0-bySearch-myQueryID.html",
+            path_prefix, product_id
+        );
+        Ok(compact_search_form_for_submit(build_search_form(
+            product_id,
+            &action_url,
+            form_params,
+        )))
     }
 
     pub fn fetch_bug_html(&self, bug_id: u64, cookie: &str) -> Result<(String, String)> {
@@ -465,13 +484,14 @@ fn summarize_login_response(raw: &str) -> String {
 ///
 /// Field overrides use a compound key to distinguish same-field-name
 /// slots that differ by operator:
-/// - `"assignedTo"` → slot 1 (operator `=`)
-/// - `"module"` → slot 1 (operator `belong`)
-/// - `"title"` → slot 3 (operator `include`)
-/// - `"resolvedDate_from"` → slot 2 (operator `>=`)
-/// - `"resolvedDate_to"` → slot 5 (operator `<=`)
-/// - `"status"` → slot 4 (operator `=`)
-/// - `"resolvedBy"` → slot 1 (operator `=`), slot 6 保持空值
+/// - `"assignedTo"` → operator `=`
+/// - `"module"` → operator `belong`
+/// - `"title"` → operator `include`
+/// - `"title_or_1"` + `"title_or_2"`(+ `"title_or_3"`) → slot4~6 (`title include`, andOr=or)
+/// - `"resolvedDate_from"` → operator `>=`
+/// - `"resolvedDate_to"` → operator `<=`
+/// - `"status"` → operator `=`
+/// - `"resolvedBy"` → operator `=`
 fn build_search_form(
     product_id: u64,
     action_url: &str,
@@ -537,8 +557,6 @@ fn build_search_form(
         field: &'static str,
         operator: &'static str,
         value: String,
-        /// Key used to match overrides against this slot
-        match_key: &'static str,
     }
 
     let mut slots = vec![
@@ -547,78 +565,145 @@ fn build_search_form(
             field: "assignedTo",
             operator: "=",
             value: String::new(),
-            match_key: "assignedTo",
         },
         Slot {
             and_or: "and",
             field: "resolvedDate",
             operator: ">=",
             value: String::new(),
-            match_key: "resolvedDate_from",
         },
         Slot {
             and_or: "and",
             field: "keywords",
             operator: "include",
             value: String::new(),
-            match_key: "keywords",
         },
         Slot {
             and_or: "AND",
             field: "status",
             operator: "=",
             value: String::new(),
-            match_key: "status",
         },
         Slot {
             and_or: "and",
             field: "resolvedDate",
             operator: "<=",
             value: String::new(),
-            match_key: "resolvedDate_to",
         },
         Slot {
             and_or: "and",
             field: "resolvedBy",
             operator: "=",
             value: String::new(),
-            match_key: "resolvedBy",
         },
     ];
 
-    let slot_index_by_key: HashMap<&str, usize> = slots
-        .iter()
-        .enumerate()
-        .map(|(idx, slot)| (slot.match_key, idx))
-        .collect();
-
-    // Apply overrides by match_key
-    for (key, value) in field_overrides {
-        if key == "module" {
-            slots[0].field = "module";
-            slots[0].operator = "belong";
-            slots[0].value = value.clone();
-            continue;
-        }
-        if key == "title" {
-            slots[2].field = "title";
-            slots[2].operator = "include";
-            slots[2].value = value.clone();
-            continue;
-        }
-        if let Some(&idx) = slot_index_by_key.get(key.as_str()) {
-            slots[idx].value = value.clone();
+    let mut overrides: HashMap<String, String> = HashMap::new();
+    for (k, v) in field_overrides {
+        if !v.trim().is_empty() {
+            overrides.insert(k.clone(), v.clone());
         }
     }
 
-    // Keep query shape close to Zentao UI:
-    // resolvedBy is always written into slot1, and slot6 is kept empty.
-    let resolved_by_value = slots[5].value.clone();
-    if !resolved_by_value.trim().is_empty() && slots[0].field == "assignedTo" {
-        slots[0].field = "resolvedBy";
-        slots[0].operator = "=";
-        slots[0].value = resolved_by_value;
-        slots[5].value.clear();
+    let get = |k: &str| overrides.get(k).cloned();
+
+    let mut title_or_values: Vec<String> = (1..=3)
+        .filter_map(|n| get(&format!("title_or_{n}")))
+        .collect();
+    if title_or_values.is_empty() {
+        // Backward compatibility for legacy internal keys.
+        if let Some(v) = get("title_or_left") {
+            title_or_values.push(v);
+        }
+        if let Some(v) = get("title_or_right") {
+            title_or_values.push(v);
+        }
+    }
+    title_or_values.truncate(3);
+    let use_title_or = title_or_values.len() >= 2;
+
+    let mut set_slot = |idx: usize, and_or: Option<&'static str>, field: &'static str, operator: &'static str, value: String| {
+        slots[idx].field = field;
+        slots[idx].operator = operator;
+        slots[idx].value = value;
+        if let Some(v) = and_or {
+            slots[idx].and_or = v;
+        }
+    };
+
+    if use_title_or {
+        // OR mode:
+        // - group1 (slot1~3): non-title filters
+        // - group2 (slot4~6): title include A [or B] [or C]
+        let mut group1: Vec<(&'static str, &'static str, String)> = Vec::new();
+        if let Some(v) = get("module") {
+            group1.push(("module", "belong", v));
+        }
+        if let Some(v) = get("assignedTo") {
+            group1.push(("assignedTo", "=", v));
+        }
+        if let Some(v) = get("resolvedBy") {
+            group1.push(("resolvedBy", "=", v));
+        }
+        if let Some(v) = get("status") {
+            group1.push(("status", "=", v));
+        }
+        if let Some(v) = get("resolvedDate_from") {
+            group1.push(("resolvedDate", ">=", v));
+        }
+        if let Some(v) = get("resolvedDate_to") {
+            group1.push(("resolvedDate", "<=", v));
+        }
+
+        for (idx, (field, operator, value)) in group1.into_iter().take(3).enumerate() {
+            set_slot(idx, None, field, operator, value);
+        }
+
+        set_slot(
+            3,
+            Some("AND"),
+            "title",
+            "include",
+            title_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            4,
+            Some("or"),
+            "title",
+            "include",
+            title_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = title_or_values.get(2) {
+            set_slot(5, Some("or"), "title", "include", v3.clone());
+        }
+    } else {
+        // Non-OR mode: deterministically fill all slots from a condition list.
+        let mut conditions: Vec<(&'static str, &'static str, String)> = Vec::new();
+        if let Some(v) = get("module") {
+            conditions.push(("module", "belong", v));
+        }
+        if let Some(v) = get("assignedTo") {
+            conditions.push(("assignedTo", "=", v));
+        }
+        if let Some(v) = get("resolvedBy") {
+            conditions.push(("resolvedBy", "=", v));
+        }
+        if let Some(v) = get("resolvedDate_from") {
+            conditions.push(("resolvedDate", ">=", v));
+        }
+        if let Some(v) = get("title") {
+            conditions.push(("title", "include", v));
+        }
+        if let Some(v) = get("status") {
+            conditions.push(("status", "=", v));
+        }
+        if let Some(v) = get("resolvedDate_to") {
+            conditions.push(("resolvedDate", "<=", v));
+        }
+
+        for (idx, (field, operator, value)) in conditions.into_iter().take(6).enumerate() {
+            set_slot(idx, None, field, operator, value);
+        }
     }
 
     // Emit slot params
@@ -645,6 +730,51 @@ fn build_search_form(
     ));
 
     form
+}
+
+fn compact_search_form_for_submit(form: Vec<(String, String)>) -> Vec<(String, String)> {
+    fn slot_index_from_key(key: &str) -> Option<usize> {
+        for prefix in ["andOr", "field", "operator", "value"] {
+            if let Some(rest) = key.strip_prefix(prefix) {
+                if let Ok(n) = rest.parse::<usize>() {
+                    if (1..=6).contains(&n) {
+                        return Some(n);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    let mut value_by_slot = [""; 7];
+    for (k, v) in &form {
+        if let Some(slot) = k
+            .strip_prefix("value")
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|n| (1..=6).contains(n))
+        {
+            value_by_slot[slot] = v.as_str();
+        }
+    }
+
+    let mut keep_slot = [false; 7];
+    for n in 1..=6 {
+        keep_slot[n] = !value_by_slot[n].trim().is_empty();
+    }
+    let has_group1 = (1..=3).any(|n| keep_slot[n]);
+    let has_group2 = (4..=6).any(|n| keep_slot[n]);
+
+    form.into_iter()
+        .filter(|(k, _)| {
+            if k == "groupAndOr" {
+                return has_group1 && has_group2;
+            }
+            if let Some(slot) = slot_index_from_key(k) {
+                return keep_slot[slot];
+            }
+            true
+        })
+        .collect()
 }
 
 fn set_form_value(form: &mut Vec<(String, String)>, key: &str, value: &str) {
