@@ -520,9 +520,15 @@ fn compact_search_form_for_submit_removes_empty_slots_and_group_and_or() {
         ("operator6".to_string(), "=".to_string()),
         ("value6".to_string(), "".to_string()),
         ("module".to_string(), "bug".to_string()),
-        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "actionURL".to_string(),
+            "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string(),
+        ),
         ("groupItems".to_string(), "3".to_string()),
-        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "formType".to_string(),
+            "more92-0-bySearch-myQueryID.html".to_string(),
+        ),
     ];
 
     let compact = compact_search_form_for_submit(form);

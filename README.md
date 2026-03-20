@@ -42,6 +42,10 @@ zentao login --url http://shendao.sharexm.cn/zentao \
 zentao bug show 51214
 zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html
 
+# 传完整详情 URL 时，会优先用该 URL 对应站点做 cookie 匹配
+# 只有你显式传了 --url 时，才会覆盖这个站点
+zentao bug show http://zentao.test.sharexm.cn/zentao/bug-view-51214.html
+
 # 3) 下载描述中的图片
 zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
 

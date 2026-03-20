@@ -53,6 +53,18 @@ fn parse_bug_id_or_url_numeric() {
     assert_eq!(parse_bug_id_or_url("51214").unwrap(), 51214);
 }
 
+#[test]
+fn parse_bug_input_numeric_has_no_site_url() {
+    let got = parse_bug_input("51214").expect("should parse");
+    assert_eq!(
+        got,
+        ParsedBugInput {
+            id: 51214,
+            site_url: None,
+        }
+    );
+}
+
 // bug 输入为详情 URL 时应提取 id。
 #[test]
 fn parse_bug_id_or_url_detail_url() {
@@ -60,11 +72,41 @@ fn parse_bug_id_or_url_detail_url() {
     assert_eq!(parse_bug_id_or_url(url).unwrap(), 51214);
 }
 
+#[test]
+fn parse_bug_input_detail_url_uses_its_site_url() {
+    let got = parse_bug_input("http://shendao.sharexm.cn/zentao/bug-view-51214.html")
+        .expect("should parse");
+    assert_eq!(
+        got,
+        ParsedBugInput {
+            id: 51214,
+            site_url: Some("http://shendao.sharexm.cn/zentao".to_string()),
+        }
+    );
+}
+
 // URL 带查询参数时也应能提取 id。
 #[test]
 fn parse_bug_id_or_url_with_query() {
     let url = "http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1";
     assert_eq!(parse_bug_id_or_url(url).unwrap(), 51214);
+}
+
+#[test]
+fn parse_bug_input_detail_url_strips_query_from_site_url() {
+    let got = parse_bug_input("http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1")
+        .expect("should parse");
+    assert_eq!(
+        got.site_url.as_deref(),
+        Some("http://shendao.sharexm.cn/zentao")
+    );
+}
+
+#[test]
+fn derive_site_url_from_root_bug_url() {
+    let url = Url::parse("http://shendao.sharexm.cn/bug-view-51214.html").expect("url");
+    let got = derive_site_url_from_bug_url(&url).expect("should derive");
+    assert_eq!(got, "http://shendao.sharexm.cn");
 }
 
 // 非法输入应返回明确错误。
@@ -126,7 +168,8 @@ fn search_cli_parse_json_flag() {
 
 #[test]
 fn search_cli_parse_title_keyword() {
-    let cli = Cli::try_parse_from(["zentao", "search", "--title", "系统测试"]).expect("should parse");
+    let cli =
+        Cli::try_parse_from(["zentao", "search", "--title", "系统测试"]).expect("should parse");
 
     match cli.command {
         Commands::Search(args) => {
@@ -138,9 +181,15 @@ fn search_cli_parse_title_keyword() {
 
 #[test]
 fn search_cli_parse_title_or_keyword() {
-    let cli =
-        Cli::try_parse_from(["zentao", "search", "--title", "系统测试", "--title-or", "线上问题"])
-            .expect("should parse");
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "search",
+        "--title",
+        "系统测试",
+        "--title-or",
+        "线上问题",
+    ])
+    .expect("should parse");
 
     match cli.command {
         Commands::Search(args) => {
@@ -269,7 +318,10 @@ fn compact_debug_search_form_only_keeps_expected_keys() {
         ("operator1".to_string(), "belong".to_string()),
         ("value1".to_string(), "1099".to_string()),
         ("groupAndOr".to_string(), "and".to_string()),
-        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "formType".to_string(),
+            "more92-0-bySearch-myQueryID.html".to_string(),
+        ),
     ];
 
     let compact = compact_debug_search_form(&form);
@@ -314,9 +366,15 @@ fn render_search_form_lisp_outputs_grouped_expression() {
         ("operator6".to_string(), "=".to_string()),
         ("value6".to_string(), "".to_string()),
         ("module".to_string(), "bug".to_string()),
-        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "actionURL".to_string(),
+            "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string(),
+        ),
         ("groupItems".to_string(), "3".to_string()),
-        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "formType".to_string(),
+            "more92-0-bySearch-myQueryID.html".to_string(),
+        ),
     ];
 
     let got = render_search_form_lisp(&form);
@@ -355,9 +413,15 @@ fn render_compact_debug_form_lines_outputs_slot_on_single_line() {
         ("operator6".to_string(), "=".to_string()),
         ("value6".to_string(), "".to_string()),
         ("module".to_string(), "bug".to_string()),
-        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "actionURL".to_string(),
+            "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string(),
+        ),
         ("groupItems".to_string(), "3".to_string()),
-        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "formType".to_string(),
+            "more92-0-bySearch-myQueryID.html".to_string(),
+        ),
     ];
 
     let lines = render_compact_debug_form_lines(&form);
@@ -376,13 +440,22 @@ fn render_compact_debug_form_lines_skips_missing_slots() {
         ("operator1".to_string(), "belong".to_string()),
         ("value1".to_string(), "1099".to_string()),
         ("module".to_string(), "bug".to_string()),
-        ("actionURL".to_string(), "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "actionURL".to_string(),
+            "/zentao/bug-browse-92-0-bySearch-myQueryID.html".to_string(),
+        ),
         ("groupItems".to_string(), "3".to_string()),
-        ("formType".to_string(), "more92-0-bySearch-myQueryID.html".to_string()),
+        (
+            "formType".to_string(),
+            "more92-0-bySearch-myQueryID.html".to_string(),
+        ),
     ];
 
     let lines = render_compact_debug_form_lines(&form);
-    assert_eq!(lines[0], "andOr1=AND field1=module operator1=belong value1=1099");
+    assert_eq!(
+        lines[0],
+        "andOr1=AND field1=module operator1=belong value1=1099"
+    );
     assert!(lines.iter().all(|l| !l.starts_with("andOr2=")));
     assert!(lines.iter().all(|l| !l.starts_with("groupAndOr=")));
 }

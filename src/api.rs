@@ -95,7 +95,8 @@ impl ZentaoApi {
         );
 
         // Build the full form body with defaults + user-provided field overrides
-        let form = compact_search_form_for_submit(build_search_form(product_id, &action_url, form_params));
+        let form =
+            compact_search_form_for_submit(build_search_form(product_id, &action_url, form_params));
 
         let resp = self
             .client
@@ -622,7 +623,11 @@ fn build_search_form(
     title_or_values.truncate(3);
     let use_title_or = title_or_values.len() >= 2;
 
-    let mut set_slot = |idx: usize, and_or: Option<&'static str>, field: &'static str, operator: &'static str, value: String| {
+    let mut set_slot = |idx: usize,
+                        and_or: Option<&'static str>,
+                        field: &'static str,
+                        operator: &'static str,
+                        value: String| {
         slots[idx].field = field;
         slots[idx].operator = operator;
         slots[idx].value = value;

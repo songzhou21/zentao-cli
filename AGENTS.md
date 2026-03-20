@@ -114,6 +114,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # 7) 直接传 Bug 详情 URL（自动提取 ID）
 ./target/release/zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html --url http://shendao.sharexm.cn/zentao
 
+# 7.1) 直接传 Bug 详情 URL 时，默认优先按该 URL 的站点做 cookie 匹配
+#      仅当显式传 --url 时才覆盖
+./target/release/zentao bug show http://zentao.test.sharexm.cn/zentao/bug-view-51214.html
+
 # 8) 直接下载图片 URL 到本地
 ./target/release/zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
 

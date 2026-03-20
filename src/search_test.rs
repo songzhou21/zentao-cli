@@ -489,7 +489,10 @@ fn render_grouped_search_json_by_assigned_to() {
         .and_then(|x| x.as_array())
         .expect("groups should be array");
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[0].get("name").and_then(|x| x.as_str()), Some("未指派"));
+    assert_eq!(
+        groups[0].get("name").and_then(|x| x.as_str()),
+        Some("未指派")
+    );
     assert_eq!(groups[1].get("name").and_then(|x| x.as_str()), Some("张三"));
 }
 
@@ -679,8 +682,10 @@ fn render_grouped_search_lines_sort_bugs_by_opened_date_desc_in_group() {
 
 #[test]
 fn parse_opened_date_rank_rolls_back_future_mmdd_to_previous_year() {
-    let now =
-        chrono::NaiveDate::from_ymd_opt(2026, 3, 2).unwrap().and_hms_opt(12, 0, 0).unwrap();
+    let now = chrono::NaiveDate::from_ymd_opt(2026, 3, 2)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap();
     let dec = parse_opened_date_rank_with_now("12-15 17:48", now).expect("should parse");
     let feb = parse_opened_date_rank_with_now("02-28 13:47", now).expect("should parse");
     assert!(feb > dec);

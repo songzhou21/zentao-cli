@@ -85,5 +85,8 @@ fn cookie_source_file_roundtrip() {
 
     // Verify that the non-default value "file" IS serialized
     let raw = std::fs::read_to_string(&path).expect("read should succeed");
-    assert!(raw.contains("cookie_source"), "non-default cookie_source should be serialized");
+    assert!(
+        raw.contains("cookie_source"),
+        "non-default cookie_source should be serialized"
+    );
 }

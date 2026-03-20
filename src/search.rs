@@ -303,7 +303,11 @@ pub fn render_grouped_search_lines_from_json(
             let resolved_date = normalize_date_for_display(&bug.resolved_date);
             let (deadline_display, deadline_overdue_raw) =
                 format_deadline_for_display(&bug.deadline, today);
-            let deadline_overdue = if resolved { false } else { deadline_overdue_raw };
+            let deadline_overdue = if resolved {
+                false
+            } else {
+                deadline_overdue_raw
+            };
             let title = bug.title.replace('\n', " ").replace('\r', " ");
             let deadline_segment = if deadline_overdue {
                 format!("截止日期：\x1b[1;31m{}\x1b[38;5;244m", deadline_display)
@@ -402,9 +406,7 @@ fn parse_opened_date_rank_with_now(raw: &str, now: NaiveDateTime) -> Option<i64>
         // Zentao 的 opened_date 常见格式为 MM-DD HH:mm，不包含年份。
         // 若按当前年解析后落在“未来”，通常代表上一年记录（例如当前 3 月看到 12-15）。
         if dt > now {
-            dt = dt
-                .with_year(year - 1)
-                .unwrap_or(dt);
+            dt = dt.with_year(year - 1).unwrap_or(dt);
         }
         return Some(dt.and_utc().timestamp());
     }

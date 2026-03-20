@@ -11,10 +11,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use regex::Regex;
 use reqwest::Url;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, Write};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
@@ -654,10 +654,7 @@ fn compact_debug_search_form(form: &[(String, String)]) -> Vec<(String, String)>
         map.insert(k.as_str(), v.as_str());
     }
     keys.iter()
-        .filter_map(|k| {
-            map.get(k)
-                .map(|v| (k.to_string(), (*v).to_string()))
-        })
+        .filter_map(|k| map.get(k).map(|v| (k.to_string(), (*v).to_string())))
         .collect()
 }
 
@@ -778,13 +775,16 @@ fn render_compact_debug_form_lines(form: &[(String, String)]) -> Vec<String> {
 }
 
 fn run_bug_show(args: BugShowArgs) -> Result<()> {
-    let bug_id = parse_bug_id_or_url(&args.id_or_url)?;
+    let parsed_bug = parse_bug_input(&args.id_or_url)?;
     let cfg_path = resolve_config_path(args.config.as_deref())?;
     let cfg = config::load_config_optional(&cfg_path)?;
 
     let site_url = resolve_required(
         args.url.as_deref(),
-        cfg.as_ref().map(|c| c.url.as_str()),
+        parsed_bug
+            .site_url
+            .as_deref()
+            .or_else(|| cfg.as_ref().map(|c| c.url.as_str())),
         "url",
     )?;
 
@@ -796,10 +796,10 @@ fn run_bug_show(args: BugShowArgs) -> Result<()> {
 
     let api_client = ZentaoApi::new(&site_url, "v1")?;
     let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
-    let (final_url, html) = api_client.fetch_bug_html(bug_id, &cookie.cookie_header)?;
+    let (final_url, html) = api_client.fetch_bug_html(parsed_bug.id, &cookie.cookie_header)?;
 
     let detail = bug::parse_bug_detail(&final_url, &html)?;
-    let markdown = bug::render_markdown(bug_id, &detail);
+    let markdown = bug::render_markdown(parsed_bug.id, &detail);
 
     if let Some(out) = args.out.as_deref() {
         let out_path = PathBuf::from(out);
@@ -970,26 +970,67 @@ fn append_search_cookie_page_size(base_cookie: &str, page_size: u32) -> String {
 }
 
 fn parse_bug_id_or_url(raw: &str) -> Result<u64> {
+    Ok(parse_bug_input(raw)?.id)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedBugInput {
+    id: u64,
+    site_url: Option<String>,
+}
+
+fn parse_bug_input(raw: &str) -> Result<ParsedBugInput> {
     let value = raw.trim();
     if value.is_empty() {
         return Err(anyhow!("Bug ID 无效: 输入为空"));
     }
     if let Ok(id) = value.parse::<u64>() {
-        return Ok(id);
+        return Ok(ParsedBugInput { id, site_url: None });
     }
 
     let re = Regex::new(r"bug-view-(\d+)\.html").expect("regex should compile");
     if let Some(caps) = re.captures(value) {
         if let Some(m) = caps.get(1) {
-            return m
+            let id = m
                 .as_str()
                 .parse::<u64>()
-                .map_err(|e| anyhow!("Bug ID 无效: {e}"));
+                .map_err(|e| anyhow!("Bug ID 无效: {e}"))?;
+            let site_url = Url::parse(value)
+                .ok()
+                .and_then(|url| derive_site_url_from_bug_url(&url).ok());
+            return Ok(ParsedBugInput { id, site_url });
         }
     }
     Err(anyhow!(
         "Bug ID 无效: 请输入数字 ID 或包含 bug-view-<id>.html 的 URL"
     ))
+}
+
+fn derive_site_url_from_bug_url(url: &Url) -> Result<String> {
+    let mut base = url.clone();
+    let mut segments: Vec<String> = base
+        .path_segments()
+        .map(|parts| parts.map(str::to_string).collect())
+        .unwrap_or_default();
+
+    let last = segments
+        .last()
+        .ok_or_else(|| anyhow!("Bug URL 无效: 缺少页面路径"))?;
+    if !last.starts_with("bug-view-") {
+        return Err(anyhow!("Bug URL 无效: 未找到 bug-view 页面"));
+    }
+    segments.pop();
+
+    let new_path = if segments.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", segments.join("/"))
+    };
+    base.set_path(&new_path);
+    base.set_query(None);
+    base.set_fragment(None);
+
+    Ok(base.to_string().trim_end_matches('/').to_string())
 }
 
 fn resolve_config_path(cli_path: Option<&str>) -> Result<PathBuf> {
