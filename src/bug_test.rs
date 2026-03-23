@@ -38,9 +38,9 @@ fn parse_real_48919_fixture() {
     assert!(detail
         .markdown_history
         .contains("2025-12-11 11:25:47, 由 石秀秀 创建。"));
-    assert!(detail
+    assert!(!detail
         .markdown_history
-        .contains("修改了 指派给 ，旧值为 \"liuyang\"，新值为 \"zhousong\"。"));
+        .contains("修改了 指派给，旧值为 \"liuyang\"，新值为 \"zhousong\"。"));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn parse_real_51267_multiple_images_fixture() {
         .contains("2026-02-24 13:58:13, 由 孙悦 创建。"));
 }
 
-// 真实 bug 48433（含长历史记录）应提取历史记录列表，避免回归丢段。
+// 真实 bug 48433（含长历史记录）应提取结构化历史，保留文本 diff 和备注，过滤原始 HTML 噪音。
 #[test]
 fn parse_real_48433_history_fixture() {
     let html = read_fixture("bug_48433_real.html");
@@ -106,10 +106,70 @@ fn parse_real_48433_history_fixture() {
     assert!(detail.title.contains("社群应用"));
     assert!(detail
         .markdown_history
-        .contains("2025-11-25 16:56:18, 由 石秀秀 创建。"));
+        .contains("- 2025-11-25 16:56:18, 由 石秀秀 创建。"));
     assert!(detail
         .markdown_history
-        .contains("2026-03-02 17:46:56, 由 刘阳 指派给 周松 。"));
+        .contains("- 2026-03-02 17:46:56, 由 刘阳 指派给 周松 。"));
+    assert!(!detail.markdown_history.contains("修改了 所属模块"));
+    assert!(!detail.markdown_history.contains("修改了 重现步骤"));
+    assert!(!detail.markdown_history.contains("004- 测试版本："));
+    assert!(!detail.markdown_history.contains("004+ 测试版本：1.13.31"));
+    assert!(detail.markdown_history.contains("  - 备注："));
+    assert!(detail
+        .markdown_history
+        .contains("听安卓开发-李小龙说：未避免接口调用频繁所以特意做成了 每次进入相同的聊天，都需要间隔10分钟才会去更新；"));
+    assert!(!detail.markdown_history.contains("&lt;p style="));
+    assert!(!detail.markdown_history.contains("切换显示"));
+}
+
+#[test]
+fn parse_real_48919_history_fixture_should_hide_routine_flow_changes() {
+    let html = read_fixture("bug_48919_real.html");
+    let detail = parse_bug_detail(
+        "http://shendao.sharexm.cn/zentao/bug-view-48919.html",
+        &html,
+    )
+    .expect("parse should succeed");
+
+    assert!(detail
+        .markdown_history
+        .contains("- 2026-01-05 09:05:16, 由 刘阳 指派给 周松 。"));
+    assert!(!detail
+        .markdown_history
+        .contains("修改了 指派给，旧值为 \"liuyang\"，新值为 \"zhousong\"。"));
+    assert!(detail
+        .markdown_history
+        .contains("  - 修改了 严重程度，旧值为 \"2\"，新值为 \"3\"。"));
+    assert!(detail
+        .markdown_history
+        .contains("  - 修改了 优先级 ，旧值为 \"2\"，新值为 \"3\"。"));
+}
+
+#[test]
+fn parse_history_should_hide_rich_text_diff_blocks() {
+    let html = r#"
+<!DOCTYPE html>
+<html><body>
+<div class='detail histories'>
+  <ol class='histories-list'>
+    <li>
+      2026-03-23 10:31:59, 由 <strong>陈婕</strong> 编辑。
+      <div class='history-changes'>
+        修改了 <strong><i>重现步骤</i></strong>，区别为：<br />
+        <blockquote class='textdiff'>007- old<br />007+ new</blockquote>
+      </div>
+    </li>
+  </ol>
+</div>
+</body></html>
+"#;
+    let doc = Html::parse_document(html);
+    let history = extract_history_markdown(&doc).expect("history should parse");
+
+    assert!(history.contains("- 2026-03-23 10:31:59, 由 陈婕 编辑。"));
+    assert!(!history.contains("修改了 重现步骤"));
+    assert!(!history.contains("007- old"));
+    assert!(!history.contains("007+ new"));
 }
 
 // 缺失标题时必须返回明确错误，防止静默输出脏数据。

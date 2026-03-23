@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use regex::Regex;
-use scraper::{ElementRef, Html, Selector};
+use scraper::{node::Node, ElementRef, Html, Selector};
 use std::collections::HashSet;
 use url::Url;
 
@@ -17,6 +17,18 @@ pub struct BugDetail {
     pub markdown_description: String,
     pub markdown_history: String,
     pub attachments: Vec<BugAttachment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HistoryEntry {
+    header: String,
+    details: Vec<HistoryDetail>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum HistoryDetail {
+    Change(String),
+    Comment(String),
 }
 
 pub fn parse_bug_detail(page_url: &str, html: &str) -> Result<BugDetail> {
@@ -343,18 +355,212 @@ fn extract_history_markdown(doc: &Html) -> Result<String> {
 
     let mut lines = Vec::new();
     for li in doc.select(&list_sel) {
-        let raw = li.text().collect::<Vec<_>>().join(" ");
-        let normalized = normalize_text_whitespace(&raw);
-        if !normalized.is_empty() {
-            lines.push(format!("- {}", normalized));
+        let entry = extract_history_entry(&li)?;
+        if entry.header.is_empty() {
+            continue;
         }
+        lines.push(render_history_entry(&entry));
     }
 
     Ok(lines.join("\n"))
 }
 
+fn extract_history_entry(li: &ElementRef<'_>) -> Result<HistoryEntry> {
+    let header = extract_history_header(li);
+    let mut details = extract_history_changes(li)?;
+    details.extend(extract_history_comments(li)?);
+    Ok(HistoryEntry { header, details })
+}
+
+fn extract_history_header(li: &ElementRef<'_>) -> String {
+    let mut parts = Vec::new();
+
+    for child in li.children() {
+        match child.value() {
+            Node::Text(text) => {
+                let normalized = normalize_text_whitespace(text);
+                if !normalized.is_empty() {
+                    parts.push(normalized);
+                }
+            }
+            Node::Element(element) => {
+                let name = element.name();
+                if matches!(name, "button" | "div" | "blockquote") {
+                    continue;
+                }
+                if let Some(child_ref) = ElementRef::wrap(child) {
+                    let normalized = normalize_text_whitespace(&child_ref.text().collect::<String>());
+                    if !normalized.is_empty() {
+                        parts.push(normalized);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    normalize_text_whitespace(&parts.join(" "))
+}
+
+fn extract_history_changes(li: &ElementRef<'_>) -> Result<Vec<HistoryDetail>> {
+    let changes_sel = parse_selector(".history-changes");
+
+    let mut details = Vec::new();
+    for changes in li.select(&changes_sel) {
+        let mut inline_html = String::new();
+
+        for child in changes.children() {
+            let Some(child_ref) = ElementRef::wrap(child) else {
+                if let Node::Text(text) = child.value() {
+                    inline_html.push_str(text);
+                }
+                continue;
+            };
+
+            if has_class(&child_ref, "original") {
+                flush_history_change_buffer(&mut inline_html, &mut details)?;
+                continue;
+            }
+
+            if has_class(&child_ref, "textdiff") {
+                flush_history_change_buffer(&mut inline_html, &mut details)?;
+                continue;
+            }
+
+            if child_ref.value().name() == "blockquote" {
+                flush_history_change_buffer(&mut inline_html, &mut details)?;
+                continue;
+            }
+
+            inline_html.push_str(&child_ref.html());
+        }
+
+        flush_history_change_buffer(&mut inline_html, &mut details)?;
+    }
+
+    Ok(details)
+}
+
+fn flush_history_change_buffer(
+    inline_html: &mut String,
+    details: &mut Vec<HistoryDetail>,
+) -> Result<()> {
+    if inline_html.trim().is_empty() {
+        inline_html.clear();
+        return Ok(());
+    }
+
+    details.extend(parse_change_lines("", Some(inline_html.as_str()))?);
+    inline_html.clear();
+    Ok(())
+}
+
+fn parse_change_lines(text: &str, source_html: Option<&str>) -> Result<Vec<HistoryDetail>> {
+    let br_re = Regex::new(r"\s*<br\s*/?>\s*").context("构建历史换行正则失败")?;
+    let segments = if let Some(html) = source_html {
+        br_re
+            .split(html)
+            .map(|part| simplify_history_text(&normalize_markdown(&html2md::parse_html(part))))
+            .collect::<Vec<_>>()
+    } else {
+        vec![simplify_history_text(text)]
+    };
+
+    let mut details = Vec::new();
+    for segment in segments {
+        if segment.is_empty() || should_hide_routine_change(&segment) || is_rich_text_change(&segment) {
+            continue;
+        }
+        details.push(HistoryDetail::Change(segment));
+    }
+    Ok(details)
+}
+
+fn should_hide_routine_change(segment: &str) -> bool {
+    let hidden_fields = [
+        "解决方案",
+        "解决版本",
+        "解决日期",
+        "指派给",
+        "消耗工时",
+        "Bug状态",
+        "是否确认",
+        "解决者",
+        "激活日期",
+        "激活次数",
+        "关闭日期",
+        "所属模块",
+    ];
+
+    hidden_fields.iter().any(|field| {
+        let normalized = normalize_text_whitespace(field);
+        segment.starts_with(&format!("修改了 {}", normalized))
+    })
+}
+
+fn is_rich_text_change(segment: &str) -> bool {
+    segment.trim_end_matches('：').trim_end().ends_with("区别为")
+}
+
+fn extract_history_comments(li: &ElementRef<'_>) -> Result<Vec<HistoryDetail>> {
+    let comment_sel = parse_selector(".article-content.comment .comment-content");
+    let mut comments = Vec::new();
+
+    for comment in li.select(&comment_sel) {
+        let mut markdown = html2md::parse_html(&comment.inner_html()).trim().to_string();
+        markdown = normalize_markdown(&markdown);
+        markdown = markdown
+            .lines()
+            .map(normalize_text_whitespace)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
+        if !markdown.is_empty() {
+            comments.push(HistoryDetail::Comment(markdown));
+        }
+    }
+
+    Ok(comments)
+}
+
+fn render_history_entry(entry: &HistoryEntry) -> String {
+    let mut out = format!("- {}", entry.header);
+    for detail in &entry.details {
+        match detail {
+            HistoryDetail::Change(change) => {
+                out.push('\n');
+                out.push_str("  - ");
+                out.push_str(change);
+            }
+            HistoryDetail::Comment(comment) => {
+                out.push('\n');
+                out.push_str("  - 备注：\n");
+                out.push_str(&indent_block(comment, "    "));
+            }
+        }
+    }
+    out
+}
+
 fn normalize_text_whitespace(input: &str) -> String {
     input.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn simplify_history_text(input: &str) -> String {
+    let bold_re = Regex::new(r"\*+").expect("valid emphasis regex");
+    let strike_re = Regex::new(r"~~([^~]+)~~").expect("valid strike regex");
+    let normalized = normalize_text_whitespace(input);
+    let without_emphasis = bold_re.replace_all(&normalized, "").to_string();
+    let without_strike = strike_re.replace_all(&without_emphasis, "$1").to_string();
+    normalize_text_whitespace(&without_strike)
+}
+
+fn has_class(node: &ElementRef<'_>, class_name: &str) -> bool {
+    node.value()
+        .attr("class")
+        .map(|classes| classes.split_whitespace().any(|item| item == class_name))
+        .unwrap_or(false)
 }
 
 fn absolutize_url(base: &Url, raw: &str) -> Result<String> {
