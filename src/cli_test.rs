@@ -104,6 +104,8 @@ fn image_download_cli_parse_success() {
         "download",
         "--url",
         "http://example.com/a.png",
+        "--output-dir",
+        "/tmp/bug52106",
     ])
     .expect("should parse");
 
@@ -112,6 +114,31 @@ fn image_download_cli_parse_success() {
             command: ImageSubCommands::Download(args),
         }) => {
             assert_eq!(args.url, "http://example.com/a.png");
+            assert_eq!(args.output_dir.as_deref(), Some("/tmp/bug52106"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn image_download_cli_parse_short_output_dir_flag() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "image",
+        "download",
+        "--url",
+        "http://example.com/a.png",
+        "-o",
+        "/tmp/bug52106",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Image(ImageArgs {
+            command: ImageSubCommands::Download(args),
+        }) => {
+            assert_eq!(args.url, "http://example.com/a.png");
+            assert_eq!(args.output_dir.as_deref(), Some("/tmp/bug52106"));
         }
         _ => panic!("unexpected command"),
     }
@@ -592,6 +619,28 @@ fn resolve_output_path_appends_suffix_when_collision() {
     let url = Url::parse("http://example.com/a.png").expect("url");
     let out = resolve_output_path_from_url(dir.path(), &url);
     assert_eq!(out.file_name().and_then(|n| n.to_str()), Some("a(1).png"));
+}
+
+#[test]
+fn image_download_cli_parse_uses_default_output_dir_when_omitted() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "image",
+        "download",
+        "--url",
+        "http://example.com/a.png",
+    ])
+    .expect("should parse");
+
+    match cli.command {
+        Commands::Image(ImageArgs {
+            command: ImageSubCommands::Download(args),
+        }) => {
+            assert_eq!(args.url, "http://example.com/a.png");
+            assert_eq!(args.output_dir, None);
+        }
+        _ => panic!("unexpected command"),
+    }
 }
 
 #[test]

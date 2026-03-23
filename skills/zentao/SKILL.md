@@ -72,6 +72,8 @@ zentao bug show <ID_OR_URL> --out ./bug-<id>.md
 
 ```bash
 zentao image download --url "<image-url>"
+zentao image download --url "<image-url>" --output-dir "/tmp/bug52106"
+zentao image download --url "<image-url>" -o "/tmp/bug52106"
 ```
 
 可批量下载（推荐，直接消费 `zentao bug show` 的 stdout Markdown）：

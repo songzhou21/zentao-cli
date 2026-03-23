@@ -124,8 +124,12 @@ enum ImageSubCommands {
 
 #[derive(Debug, Args)]
 struct ImageDownloadArgs {
+    /// 图片 URL（仅支持 http/https）
     #[arg(long)]
     url: String,
+    /// 下载输出目录，默认 `/tmp/zentao-images`
+    #[arg(short = 'o', long)]
+    output_dir: Option<String>,
 }
 
 /// 搜索 Bug（支持按指派者、解决者、解决日期等条件筛选）
@@ -817,7 +821,7 @@ fn run_bug_show(args: BugShowArgs) -> Result<()> {
 
 fn run_image_download(args: ImageDownloadArgs) -> Result<()> {
     let image_url = validate_image_url(&args.url)?;
-    let out_dir = Path::new(IMAGE_DOWNLOAD_DIR);
+    let out_dir = Path::new(args.output_dir.as_deref().unwrap_or(IMAGE_DOWNLOAD_DIR));
     fs::create_dir_all(out_dir).context("创建图片下载目录失败")?;
 
     let out_path = resolve_output_path_from_url(out_dir, &image_url);

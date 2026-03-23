@@ -48,6 +48,8 @@ zentao bug show http://zentao.test.sharexm.cn/zentao/bug-view-51214.html
 
 # 3) 下载描述中的图片
 zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
+zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png --output-dir /tmp/bug52106
+zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png -o /tmp/bug52106
 
 # 4) 搜索（文本输出）
 zentao search --assigned-to zhousong
