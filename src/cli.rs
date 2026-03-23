@@ -969,10 +969,6 @@ fn append_search_cookie_page_size(base_cookie: &str, page_size: u32) -> String {
     }
 }
 
-fn parse_bug_id_or_url(raw: &str) -> Result<u64> {
-    Ok(parse_bug_input(raw)?.id)
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedBugInput {
     id: u64,

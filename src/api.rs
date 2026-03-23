@@ -191,37 +191,7 @@ impl ZentaoApi {
 
     pub fn fetch_bug_html(&self, bug_id: u64, cookie: &str) -> Result<(String, String)> {
         let bug_url = format!("{}/bug-view-{}.html", self.site_url, bug_id);
-        let resp = self
-            .client
-            .get(&bug_url)
-            .header("Cookie", cookie)
-            .send()
-            .with_context(|| format!("请求 bug 页面失败: {}", bug_url))?;
-
-        let status = resp.status();
-        let final_url = resp.url().to_string();
-        let body = resp.text().context("读取 bug 页面响应体失败")?.to_string();
-
-        if !status.is_success() {
-            return Err(anyhow!(
-                "获取 bug 详情失败: HTTP {} ({})",
-                status.as_u16(),
-                final_url
-            ));
-        }
-        if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
-            return Err(anyhow!("获取 bug 详情失败: cookie 无效或已过期"));
-        }
-        // Check for JS redirect to login page
-        if let Some(redirect) = extract_js_redirect(&body) {
-            if redirect.contains("/user-login-") || redirect.contains("/user-login.") {
-                return Err(anyhow!("获取 bug 详情失败: cookie 无效或已过期"));
-            }
-        }
-        if body.trim().is_empty() {
-            return Err(anyhow!("获取 bug 详情失败: 页面内容为空"));
-        }
-
+        let (final_url, body) = self.fetch_text(&bug_url, cookie, "获取 bug 详情失败")?;
         Ok((final_url, body))
     }
 
@@ -333,6 +303,41 @@ impl ZentaoApi {
             login_response_body,
             set_cookies_by_url,
         })
+    }
+}
+
+fn fetch_text_url(client: &Client, url: &str, cookie: &str, action: &str) -> Result<(String, String)> {
+    let resp = client
+        .get(url)
+        .header("Cookie", cookie)
+        .send()
+        .with_context(|| format!("请求失败: {}", url))?;
+
+    let status = resp.status();
+    let final_url = resp.url().to_string();
+    let body = resp.text().context("读取响应体失败")?.to_string();
+
+    if !status.is_success() {
+        return Err(anyhow!("{}: HTTP {} ({})", action, status.as_u16(), final_url));
+    }
+    if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
+        return Err(anyhow!("{}: cookie 无效或已过期", action));
+    }
+    if let Some(redirect) = extract_js_redirect(&body) {
+        if redirect.contains("/user-login-") || redirect.contains("/user-login.") {
+            return Err(anyhow!("{}: cookie 无效或已过期", action));
+        }
+    }
+    if body.trim().is_empty() {
+        return Err(anyhow!("{}: 页面内容为空", action));
+    }
+
+    Ok((final_url, body))
+}
+
+impl ZentaoApi {
+    fn fetch_text(&self, url: &str, cookie: &str, action: &str) -> Result<(String, String)> {
+        fetch_text_url(&self.client, url, cookie, action)
     }
 }
 

@@ -47,12 +47,6 @@ fn chrome_expires_utc_to_unix_known_timestamp() {
     assert_eq!(chrome_expires_utc_to_unix(expires_utc), 1704067200_i64);
 }
 
-// bug 输入为纯数字时应直接解析成 id。
-#[test]
-fn parse_bug_id_or_url_numeric() {
-    assert_eq!(parse_bug_id_or_url("51214").unwrap(), 51214);
-}
-
 #[test]
 fn parse_bug_input_numeric_has_no_site_url() {
     let got = parse_bug_input("51214").expect("should parse");
@@ -63,13 +57,6 @@ fn parse_bug_input_numeric_has_no_site_url() {
             site_url: None,
         }
     );
-}
-
-// bug 输入为详情 URL 时应提取 id。
-#[test]
-fn parse_bug_id_or_url_detail_url() {
-    let url = "http://shendao.sharexm.cn/zentao/bug-view-51214.html";
-    assert_eq!(parse_bug_id_or_url(url).unwrap(), 51214);
 }
 
 #[test]
@@ -83,13 +70,6 @@ fn parse_bug_input_detail_url_uses_its_site_url() {
             site_url: Some("http://shendao.sharexm.cn/zentao".to_string()),
         }
     );
-}
-
-// URL 带查询参数时也应能提取 id。
-#[test]
-fn parse_bug_id_or_url_with_query() {
-    let url = "http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1";
-    assert_eq!(parse_bug_id_or_url(url).unwrap(), 51214);
 }
 
 #[test]
@@ -111,8 +91,8 @@ fn derive_site_url_from_root_bug_url() {
 
 // 非法输入应返回明确错误。
 #[test]
-fn parse_bug_id_or_url_invalid() {
-    let err = parse_bug_id_or_url("http://shendao/share/bug-xxx").expect_err("should fail");
+fn parse_bug_input_invalid() {
+    let err = parse_bug_input("http://shendao/share/bug-xxx").expect_err("should fail");
     assert!(err.to_string().contains("Bug ID 无效"));
 }
 

@@ -33,12 +33,32 @@ fn parse_real_48919_fixture() {
     assert!(detail
         .markdown_description
         .contains("![img#1](http://shendao.sharexm.cn/zentao/file-read-59561.png)"));
+    assert!(!detail.attachments.is_empty());
+    assert!(detail.attachments[0].url.contains("/zentao/data/upload/"));
     assert!(detail
         .markdown_history
         .contains("2025-12-11 11:25:47, 由 石秀秀 创建。"));
     assert!(detail
         .markdown_history
         .contains("修改了 指派给 ，旧值为 \"liuyang\"，新值为 \"zhousong\"。"));
+}
+
+#[test]
+fn parse_embedded_zip_urls_into_attachments() {
+    let markdown = concat!(
+        "**[步骤]**\n\n",
+        r#"**["report\_user\_url:[https://resource.sharexm.com.cn/im/log/iOS/202603/23/a.zip](https://resource.sharexm.com.cn/im/log/iOS/202603/23/a.zip)","report\_user\_url:[https://resource.sharexm.com.cn/im/log/iOS/202603/23/b.zip](https://resource.sharexm.com.cn/im/log/iOS/202603/23/b.zip)"]**"#,
+        "\n\n",
+        "1. 转写开始"
+    );
+
+    let (cleaned, attachments) = extract_embedded_attachments(markdown);
+    assert!(!cleaned.contains("report_user_url"));
+    assert!(!cleaned.contains("report\\_user\\_url"));
+    assert!(cleaned.contains("1. 转写开始"));
+    assert_eq!(attachments.len(), 2);
+    assert_eq!(attachments[0].label, "a.zip");
+    assert_eq!(attachments[1].label, "b.zip");
 }
 
 // 真实 bug 51267（正文含多图）应按顺序生成多张绝对地址图片。
@@ -67,6 +87,7 @@ fn parse_real_51267_multiple_images_fixture() {
     assert!(!detail.markdown_description.contains("Attachments:"));
     assert!(!detail.markdown_description.contains(r"\["));
     assert!(!detail.markdown_description.contains(r"\]"));
+    assert!(detail.attachments.is_empty());
     assert!(detail
         .markdown_history
         .contains("2026-02-24 13:58:13, 由 孙悦 创建。"));
@@ -159,20 +180,6 @@ fn normalize_bracket_heading_bold_scope_cases() {
     );
 }
 
-// 附件列表应追加编号链接；无附件时保持原文。
-#[test]
-fn append_attachment_links_cases() {
-    let out = append_attachment_links("正文", &["http://a".to_string(), "http://b".to_string()]);
-    assert!(out.contains("正文"));
-    assert!(out.contains("Attachments:"));
-    assert!(out.contains("- [attachment#1](http://a)"));
-    assert!(out.contains("- [attachment#2](http://b)"));
-
-    let unchanged = append_attachment_links("正文", &[]);
-    assert_eq!(unchanged, "正文");
-}
-
-// 渲染结果应包含固定结构，避免下游消费格式漂移。
 #[test]
 fn render_markdown_should_have_sections() {
     let md = render_markdown(
@@ -181,13 +188,21 @@ fn render_markdown_should_have_sections() {
             title: "标题".to_string(),
             markdown_description: "正文".to_string(),
             markdown_history: "- 创建".to_string(),
+            attachments: vec![BugAttachment {
+                label: "attachment#1".to_string(),
+                url: "http://a".to_string(),
+                details_markdown: None,
+            }],
         },
     );
     assert!(md.contains("# Bug #9 标题"));
     assert!(md.contains("## 描述"));
     assert!(md.contains("## 历史记录"));
+    assert!(md.contains("## 附件"));
     assert!(md.contains("正文"));
     assert!(md.contains("- 创建"));
+    assert!(md.contains("[attachment#1](http://a)"));
+    assert!(!md.contains("ZIP: `logs.zip`"));
 
     let empty = render_markdown(
         10,
@@ -195,6 +210,7 @@ fn render_markdown_should_have_sections() {
             title: "空描述".to_string(),
             markdown_description: "   ".to_string(),
             markdown_history: "   ".to_string(),
+            attachments: vec![],
         },
     );
     assert!(empty.contains("(无)"));

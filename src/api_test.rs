@@ -95,7 +95,6 @@ fn summarize_login_response_decodes_unicode_message() {
     assert!(got.contains("您还有1次尝试机会。"));
 }
 
-// VerifyCookie 访问 my-profile 页面，应覆盖无跳转成功、登录跳转、非预期跳转和 HTTP 非 2xx。
 #[test]
 fn verify_cookie_table_cases() {
     let cases = [

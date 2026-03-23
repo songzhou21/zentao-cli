@@ -88,10 +88,26 @@ zentao bug show <ID_OR_URL> \
 4.4 失败处理
 - 若访问 `sharexm.cn` 失败，直接申请放开该域名网络权限（含 DNS 解析与 HTTP 访问）后重试
 
-4.5 场景约束
-- `排查 bug`：必须下载图片并查看后再分析；不能只基于文字描述
-- `git commit`：下载图片是可选动作；若文字信息充分，可不下载
-- 排查时结论需结合截图中的 UI 状态、按钮文案、抓包字段
+4.5 ZIP 附件日志处理（仅 fix bug / 排查 bug 场景）
+- 当 `zentao bug show <ID_OR_URL>` 输出中的 `## 附件` 出现 `.zip` 链接，且任务目标是 `fix bug`、`排查 bug`、`分析日志` 时，必须下载并分析 ZIP 日志
+- 典型样例：
+  - `[21d3aabf_212885_20260323102807.zip](https://resource.sharexm.com.cn/im/log/iOS/202603/23/21d3aabf_212885_20260323102807.zip)`
+  - `[21d3aabf_livekit_212885_20260323_102807.zip](https://resource.sharexm.com.cn/im/log/iOS/202603/23/21d3aabf_livekit_212885_20260323_102807.zip)`
+- 必须使用 **local shell** 下载，不要在 hosted/container shell 中处理
+- 下载后统一解压到 `/tmp` 目录下的独立子目录，再分析日志内容
+- 建议流程：先从 `## 附件` 提取 ZIP URL，下载到 `/tmp`，再解压到同名目录，例如：
+
+```bash
+curl -L "<zip-url>" -o "/tmp/<zip-name>.zip"
+unzip -o "/tmp/<zip-name>.zip" -d "/tmp/<zip-name>"
+```
+
+- 分析时优先关注崩溃前后时序、错误关键字、网络请求失败、音视频/LiveKit 相关状态流转、用户操作链路
+
+4.6 场景约束
+- `排查 bug`：必须下载图片并查看；若 `## 附件` 中存在 ZIP 日志，也必须解压到 `/tmp` 后结合日志一起分析；不能只基于文字描述
+- `git commit`：下载图片和 ZIP 日志都是可选动作；若文字信息充分，可不下载
+- 排查时结论需结合截图中的 UI 状态、按钮文案、抓包字段、日志时序
 
 ## 输出格式约束
 
@@ -104,7 +120,7 @@ zentao bug show <ID_OR_URL> \
 
 - 描述中的图片地址补全为绝对 URL
 - 空图片 alt 自动命名为 `img#<n>`
-- 有附件时追加 `Attachments:` 列表
+- 有附件时输出独立的 `## 附件` section
 
 ## 错误处理
 
