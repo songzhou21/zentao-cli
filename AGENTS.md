@@ -12,7 +12,7 @@
 - 输出 Cookie 明细（含到期时间格式化）
 - 可选校验 Cookie 是否有效（根路径重定向规则）
 - 支持管理 Chrome Profile 并保存到 `config.json`
-- 支持按 Bug ID 抓取详情并输出 Markdown（正文图片地址自动补全）
+- 支持按 Bug 详情 URL 抓取详情并输出 Markdown（正文图片地址自动补全）
 - 支持按图片 URL 直接下载到本地（`image download --url`）
 - 支持搜索 Bug（按指派者、解决者、解决日期范围筛选，输出文本列表）
   - `search` 默认携带 `pagerBugBrowse=20`，可通过 `--page-size` 覆盖
@@ -105,16 +105,17 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # 4) 读取后执行校验
 ./target/release/zentao cookie --url http://shendao.sharexm.cn/zentao --verify
 
-# 5) 按 Bug ID 输出 Markdown 到终端
-./target/release/zentao bug show 51214 --url http://shendao.sharexm.cn/zentao
+# 5) 按 Bug 详情 URL 输出 Markdown 到终端
+./target/release/zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html
 
-# 6) 按 Bug ID 输出 Markdown 到文件
-./target/release/zentao bug show 51214 --url http://shendao.sharexm.cn/zentao --out ./bug-51214.md
+# 6) 按 Bug 详情 URL 输出 Markdown 到文件
+./target/release/zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html --out ./bug-51214.md
 
-# 7) 直接传 Bug 详情 URL（自动提取 ID）
+# 7) 直接传 Bug 详情 URL（自动提取 ID，并优先按该 URL 的站点做 cookie 匹配）
 ./target/release/zentao bug show http://shendao.sharexm.cn/zentao/bug-view-51214.html --url http://shendao.sharexm.cn/zentao
 
 # 7.1) 直接传 Bug 详情 URL 时，默认优先按该 URL 的站点做 cookie 匹配
+#      不再支持纯数字 ID，避免跳转后的站点不一致导致找不到 cookie；
 #      仅当显式传 --url 时才覆盖
 ./target/release/zentao bug show http://zentao.test.sharexm.cn/zentao/bug-view-51214.html
 

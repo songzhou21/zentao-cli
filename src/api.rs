@@ -189,9 +189,8 @@ impl ZentaoApi {
         )))
     }
 
-    pub fn fetch_bug_html(&self, bug_id: u64, cookie: &str) -> Result<(String, String)> {
-        let bug_url = format!("{}/bug-view-{}.html", self.site_url, bug_id);
-        let (final_url, body) = self.fetch_text(&bug_url, cookie, "获取 bug 详情失败")?;
+    pub fn fetch_bug_html(&self, bug_url: &str, cookie: &str) -> Result<(String, String)> {
+        let (final_url, body) = self.fetch_text(bug_url, cookie, "获取 bug 详情失败")?;
         Ok((final_url, body))
     }
 

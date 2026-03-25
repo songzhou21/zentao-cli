@@ -48,37 +48,27 @@ fn chrome_expires_utc_to_unix_known_timestamp() {
 }
 
 #[test]
-fn parse_bug_input_numeric_has_no_site_url() {
-    let got = parse_bug_input("51214").expect("should parse");
-    assert_eq!(
-        got,
-        ParsedBugInput {
-            id: 51214,
-            site_url: None,
-        }
-    );
-}
-
-#[test]
-fn parse_bug_input_detail_url_uses_its_site_url() {
-    let got = parse_bug_input("http://shendao.sharexm.cn/zentao/bug-view-51214.html")
+fn parse_bug_url_detail_url_uses_its_site_url() {
+    let got = parse_bug_url("http://shendao.sharexm.cn/zentao/bug-view-51214.html")
         .expect("should parse");
     assert_eq!(
         got,
         ParsedBugInput {
             id: 51214,
-            site_url: Some("http://shendao.sharexm.cn/zentao".to_string()),
+            site_url: "http://shendao.sharexm.cn/zentao".to_string(),
+            bug_url: "http://shendao.sharexm.cn/zentao/bug-view-51214.html".to_string(),
         }
     );
 }
 
 #[test]
-fn parse_bug_input_detail_url_strips_query_from_site_url() {
-    let got = parse_bug_input("http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1")
+fn parse_bug_url_detail_url_strips_query_from_site_url() {
+    let got = parse_bug_url("http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1")
         .expect("should parse");
+    assert_eq!(got.site_url, "http://shendao.sharexm.cn/zentao");
     assert_eq!(
-        got.site_url.as_deref(),
-        Some("http://shendao.sharexm.cn/zentao")
+        got.bug_url,
+        "http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1"
     );
 }
 
@@ -91,9 +81,15 @@ fn derive_site_url_from_root_bug_url() {
 
 // 非法输入应返回明确错误。
 #[test]
-fn parse_bug_input_invalid() {
-    let err = parse_bug_input("http://shendao/share/bug-xxx").expect_err("should fail");
-    assert!(err.to_string().contains("Bug ID 无效"));
+fn parse_bug_url_invalid_when_numeric_only() {
+    let err = parse_bug_url("51214").expect_err("should fail");
+    assert!(err.to_string().contains("Bug URL 无效"));
+}
+
+#[test]
+fn parse_bug_url_invalid() {
+    let err = parse_bug_url("http://shendao/share/bug-xxx").expect_err("should fail");
+    assert!(err.to_string().contains("Bug URL 无效"));
 }
 
 #[test]

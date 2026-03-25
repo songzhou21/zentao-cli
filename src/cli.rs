@@ -99,8 +99,8 @@ enum BugSubCommands {
 
 #[derive(Debug, Args)]
 struct BugShowArgs {
-    #[arg(value_name = "ID_OR_URL")]
-    id_or_url: String,
+    #[arg(value_name = "BUG_URL")]
+    bug_url: String,
     #[arg(long)]
     url: Option<String>,
     #[arg(long)]
@@ -779,16 +779,13 @@ fn render_compact_debug_form_lines(form: &[(String, String)]) -> Vec<String> {
 }
 
 fn run_bug_show(args: BugShowArgs) -> Result<()> {
-    let parsed_bug = parse_bug_input(&args.id_or_url)?;
+    let parsed_bug = parse_bug_url(&args.bug_url)?;
     let cfg_path = resolve_config_path(args.config.as_deref())?;
     let cfg = config::load_config_optional(&cfg_path)?;
 
     let site_url = resolve_required(
         args.url.as_deref(),
-        parsed_bug
-            .site_url
-            .as_deref()
-            .or_else(|| cfg.as_ref().map(|c| c.url.as_str())),
+        Some(parsed_bug.site_url.as_str()),
         "url",
     )?;
 
@@ -800,7 +797,7 @@ fn run_bug_show(args: BugShowArgs) -> Result<()> {
 
     let api_client = ZentaoApi::new(&site_url, "v1")?;
     let cookie = load_cookie_for_site(&site_url, profile.as_deref(), cfg.as_ref())?;
-    let (final_url, html) = api_client.fetch_bug_html(parsed_bug.id, &cookie.cookie_header)?;
+    let (final_url, html) = api_client.fetch_bug_html(&parsed_bug.bug_url, &cookie.cookie_header)?;
 
     let detail = bug::parse_bug_detail(&final_url, &html)?;
     let markdown = bug::render_markdown(parsed_bug.id, &detail);
@@ -976,33 +973,34 @@ fn append_search_cookie_page_size(base_cookie: &str, page_size: u32) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedBugInput {
     id: u64,
-    site_url: Option<String>,
+    site_url: String,
+    bug_url: String,
 }
 
-fn parse_bug_input(raw: &str) -> Result<ParsedBugInput> {
+fn parse_bug_url(raw: &str) -> Result<ParsedBugInput> {
     let value = raw.trim();
     if value.is_empty() {
-        return Err(anyhow!("Bug ID 无效: 输入为空"));
-    }
-    if let Ok(id) = value.parse::<u64>() {
-        return Ok(ParsedBugInput { id, site_url: None });
+        return Err(anyhow!("Bug URL 无效: 输入为空"));
     }
 
+    let bug_url = Url::parse(value).map_err(|_| anyhow!("Bug URL 无效: 请输入完整的 bug 详情 URL"))?;
     let re = Regex::new(r"bug-view-(\d+)\.html").expect("regex should compile");
-    if let Some(caps) = re.captures(value) {
+    if let Some(caps) = re.captures(bug_url.path()) {
         if let Some(m) = caps.get(1) {
             let id = m
                 .as_str()
                 .parse::<u64>()
-                .map_err(|e| anyhow!("Bug ID 无效: {e}"))?;
-            let site_url = Url::parse(value)
-                .ok()
-                .and_then(|url| derive_site_url_from_bug_url(&url).ok());
-            return Ok(ParsedBugInput { id, site_url });
+                .map_err(|e| anyhow!("Bug URL 无效: {e}"))?;
+            let site_url = derive_site_url_from_bug_url(&bug_url)?;
+            return Ok(ParsedBugInput {
+                id,
+                site_url,
+                bug_url: bug_url.to_string(),
+            });
         }
     }
     Err(anyhow!(
-        "Bug ID 无效: 请输入数字 ID 或包含 bug-view-<id>.html 的 URL"
+        "Bug URL 无效: 请输入包含 bug-view-<id>.html 的完整详情 URL"
     ))
 }
 

@@ -623,7 +623,7 @@ fn fetch_bug_html_table_cases() {
     for (_name, plans, want_err, want_body_contains) in cases {
         let (site, seen_cookie, handle) = spawn_test_server(plans);
         let api = ZentaoApi::new(&site, "v1").expect("api should build");
-        let got = api.fetch_bug_html(51214, "zp=test");
+        let got = api.fetch_bug_html(&format!("{site}/bug-view-51214.html"), "zp=test");
 
         handle.join().expect("server should join");
         let sent = seen_cookie.lock().expect("lock should succeed").clone();
