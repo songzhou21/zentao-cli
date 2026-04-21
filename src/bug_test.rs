@@ -164,7 +164,8 @@ fn parse_history_should_hide_rich_text_diff_blocks() {
 </body></html>
 "#;
     let doc = Html::parse_document(html);
-    let history = extract_history_markdown(&doc).expect("history should parse");
+    let history = extract_history_markdown(&doc, "http://example.com/zentao/bug-view-1.html")
+        .expect("history should parse");
 
     assert!(history.contains("- 2026-03-23 10:31:59, 由 陈婕 编辑。"));
     assert!(!history.contains("修改了 重现步骤"));
@@ -210,6 +211,71 @@ fn absolutize_markdown_image_urls_cases() {
     assert!(out.contains("![d](data:image/png;base64,abc)"));
 }
 
+#[test]
+fn absolutize_markdown_image_urls_with_custom_prefix_cases() {
+    let input = ["![](/a/1.png)", "![ ](/a/2.png)"].join("\n");
+
+    let out = absolutize_markdown_image_urls_with_prefix(
+        &input,
+        "http://example.com/zentao/bug-view-1.html",
+        "history-img",
+    )
+    .expect("convert should succeed");
+
+    assert!(out.contains("![history-img#1](http://example.com/a/1.png)"));
+    assert!(out.contains("![history-img#2](http://example.com/a/2.png)"));
+}
+
+#[test]
+fn split_markdown_image_and_following_text_cases() {
+    let out = split_markdown_image_and_following_text(
+        "![history-img#1](http://x/1.png)安全-上传文档开关按钮未同步回显错误",
+    )
+    .expect("split should succeed");
+
+    assert_eq!(
+        out,
+        "![history-img#1](http://x/1.png)\n\n安全-上传文档开关按钮未同步回显错误"
+    );
+}
+
+#[test]
+fn parse_history_comments_should_absolutize_images_with_global_history_names() {
+    let html = r#"
+<!DOCTYPE html>
+<html><body>
+<div class='detail histories'>
+  <ol class='histories-list'>
+    <li>
+      2026-04-08 20:42:41, 由 <strong>陈婕</strong> 添加备注。
+      <div class='article-content comment'>
+        <div class='comment-content'>
+          <p><img src='/zentao/file-read-64873.jpeg' alt=''></p>
+          <p><img src='/zentao/file-read-64907.png' alt=''></p>
+        </div>
+      </div>
+    </li>
+    <li>
+      2026-04-20 17:33:36, 由 <strong>陈婕</strong> 激活。
+      <div class='article-content comment'>
+        <div class='comment-content'>
+          <p><img src='/zentao/file-read-65380.png' alt=''></p>
+        </div>
+      </div>
+    </li>
+  </ol>
+</div>
+</body></html>
+"#;
+    let doc = Html::parse_document(html);
+    let history = extract_history_markdown(&doc, "http://shendao.sharexm.cn/zentao/bug-view-52676.html")
+        .expect("history should parse");
+
+    assert!(history.contains("![history-img#1](http://shendao.sharexm.cn/zentao/file-read-64873.jpeg)"));
+    assert!(history.contains("![history-img#2](http://shendao.sharexm.cn/zentao/file-read-64907.png)"));
+    assert!(history.contains("![history-img#3](http://shendao.sharexm.cn/zentao/file-read-65380.png)"));
+}
+
 // 转义的方括号应被还原。
 #[test]
 fn normalize_markdown_unescapes_brackets() {
@@ -232,7 +298,7 @@ fn split_adjacent_markdown_images_cases() {
 // 形如 **[结果] ... ** 的加粗范围应仅保留在标题，图片不应被加粗。
 #[test]
 fn normalize_bracket_heading_bold_scope_cases() {
-    let input = "**[结果]\n![img#1](http://x/1.png)\n![img#2](http://x/2.png)**";
+    let input = "**[结果]\n**![img#1](http://x/1.png)\n![img#2](http://x/2.png)**";
     let out = normalize_bracket_heading_bold_scope(input).expect("normalize should succeed");
     assert_eq!(
         out,

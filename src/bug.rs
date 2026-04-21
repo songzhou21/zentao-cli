@@ -44,7 +44,7 @@ pub fn parse_bug_detail(page_url: &str, html: &str) -> Result<BugDetail> {
     markdown = normalize_bracket_heading_bold_scope(&markdown)?;
     markdown = normalize_markdown(&markdown);
     let (markdown, embedded_attachments) = extract_embedded_attachments(&markdown);
-    let history = extract_history_markdown(&doc)?;
+    let history = extract_history_markdown(&doc, page_url)?;
     let attachments = merge_attachments(extract_attachments(&doc, page_url)?, embedded_attachments);
 
     Ok(BugDetail {
@@ -172,10 +172,28 @@ fn indent_block(input: &str, prefix: &str) -> String {
 }
 
 fn absolutize_markdown_image_urls(markdown: &str, page_url: &str) -> Result<String> {
+    absolutize_markdown_image_urls_with_prefix(markdown, page_url, "img")
+}
+
+fn absolutize_markdown_image_urls_with_prefix(
+    markdown: &str,
+    page_url: &str,
+    default_alt_prefix: &str,
+) -> Result<String> {
+    absolutize_markdown_image_urls_with_prefix_and_start(markdown, page_url, default_alt_prefix, 0)
+        .map(|(markdown, _)| markdown)
+}
+
+fn absolutize_markdown_image_urls_with_prefix_and_start(
+    markdown: &str,
+    page_url: &str,
+    default_alt_prefix: &str,
+    start_idx: usize,
+) -> Result<(String, usize)> {
     let base = Url::parse(page_url).context("解析 bug 页面 URL 失败")?;
     let re = Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").context("构建图片正则失败")?;
 
-    let mut idx = 0usize;
+    let mut idx = start_idx;
     let mut out = String::with_capacity(markdown.len() + 64);
     let mut last = 0usize;
 
@@ -195,7 +213,7 @@ fn absolutize_markdown_image_urls(markdown: &str, page_url: &str) -> Result<Stri
         let abs = absolutize_url(&base, raw).unwrap_or_else(|_| raw.to_string());
         let alt = if alt_raw.is_empty() {
             idx += 1;
-            format!("img#{idx}")
+            format!("{default_alt_prefix}#{idx}")
         } else {
             alt_raw.to_string()
         };
@@ -205,7 +223,7 @@ fn absolutize_markdown_image_urls(markdown: &str, page_url: &str) -> Result<Stri
     }
 
     out.push_str(&markdown[last..]);
-    Ok(out)
+    Ok((out, idx))
 }
 
 fn normalize_markdown(markdown: &str) -> String {
@@ -217,13 +235,37 @@ fn split_adjacent_markdown_images(markdown: &str) -> Result<String> {
     Ok(re.replace_all(markdown, ")\n\n![").to_string())
 }
 
+fn split_markdown_image_and_following_text(markdown: &str) -> Result<String> {
+    let re = Regex::new(r"!\[[^\]]*\]\([^)]+\)").context("构建图片与后续文本分隔正则失败")?;
+    let mut out = String::with_capacity(markdown.len() + 16);
+    let mut last = 0usize;
+
+    for m in re.find_iter(markdown) {
+        out.push_str(&markdown[last..m.start()]);
+        out.push_str(m.as_str());
+
+        let next = markdown[m.end()..].chars().next();
+        if matches!(next, Some(ch) if !ch.is_whitespace()) {
+            out.push_str("\n\n");
+        }
+
+        last = m.end();
+    }
+
+    out.push_str(&markdown[last..]);
+    Ok(out)
+}
+
 fn normalize_bracket_heading_bold_scope(markdown: &str) -> Result<String> {
     let open_re = Regex::new(r"\*\*(\[[^\]]+\])\s*\n").context("构建加粗标题起始正则失败")?;
     let mut out = open_re.replace_all(markdown, "**$1**\n").to_string();
 
-    // 清理因原始转换导致附着在图片后的尾部加粗标记。
-    let close_re = Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建加粗标题结束正则失败")?;
-    out = close_re.replace_all(&out, "$1").to_string();
+    // 清理因原始转换导致附着在图片前后的残留加粗标记。
+    let leading_re = Regex::new(r"\*\*(!\[[^\]]*\]\([^)]+\))").context("构建图片前置加粗正则失败")?;
+    out = leading_re.replace_all(&out, "$1").to_string();
+
+    let trailing_re = Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建图片后置加粗正则失败")?;
+    out = trailing_re.replace_all(&out, "$1").to_string();
     Ok(out)
 }
 
@@ -350,12 +392,13 @@ fn extract_attachments(doc: &Html, page_url: &str) -> Result<Vec<BugAttachment>>
     Ok(attachments)
 }
 
-fn extract_history_markdown(doc: &Html) -> Result<String> {
+fn extract_history_markdown(doc: &Html, page_url: &str) -> Result<String> {
     let list_sel = parse_selector("div.detail.histories ol.histories-list > li");
 
     let mut lines = Vec::new();
+    let mut image_idx = 0usize;
     for li in doc.select(&list_sel) {
-        let entry = extract_history_entry(&li)?;
+        let entry = extract_history_entry(&li, page_url, &mut image_idx)?;
         if entry.header.is_empty() {
             continue;
         }
@@ -365,10 +408,14 @@ fn extract_history_markdown(doc: &Html) -> Result<String> {
     Ok(lines.join("\n"))
 }
 
-fn extract_history_entry(li: &ElementRef<'_>) -> Result<HistoryEntry> {
+fn extract_history_entry(
+    li: &ElementRef<'_>,
+    page_url: &str,
+    image_idx: &mut usize,
+) -> Result<HistoryEntry> {
     let header = extract_history_header(li);
     let mut details = extract_history_changes(li)?;
-    details.extend(extract_history_comments(li)?);
+    details.extend(extract_history_comments(li, page_url, image_idx)?);
     Ok(HistoryEntry { header, details })
 }
 
@@ -502,12 +549,27 @@ fn is_rich_text_change(segment: &str) -> bool {
     segment.trim_end_matches('：').trim_end().ends_with("区别为")
 }
 
-fn extract_history_comments(li: &ElementRef<'_>) -> Result<Vec<HistoryDetail>> {
+fn extract_history_comments(
+    li: &ElementRef<'_>,
+    page_url: &str,
+    image_idx: &mut usize,
+) -> Result<Vec<HistoryDetail>> {
     let comment_sel = parse_selector(".article-content.comment .comment-content");
     let mut comments = Vec::new();
 
     for comment in li.select(&comment_sel) {
         let mut markdown = html2md::parse_html(&comment.inner_html()).trim().to_string();
+        let (converted, next_idx) = absolutize_markdown_image_urls_with_prefix_and_start(
+            &markdown,
+            page_url,
+            "history-img",
+            *image_idx,
+        )?;
+        *image_idx = next_idx;
+        markdown = converted;
+        markdown = split_adjacent_markdown_images(&markdown)?;
+        markdown = split_markdown_image_and_following_text(&markdown)?;
+        markdown = normalize_bracket_heading_bold_scope(&markdown)?;
         markdown = normalize_markdown(&markdown);
         markdown = markdown
             .lines()
