@@ -53,7 +53,7 @@ zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
 
 # 4) 搜索（文本输出）
 zentao search --assigned-to zhousong
-zentao search --title 系统测试 --module 1099 --bug-status active
+zentao search --title 系统测试 --bug-status active
 
 # 5) 搜索（JSON 输出，便于脚本处理）
 zentao search --resolved-by zhousong \
