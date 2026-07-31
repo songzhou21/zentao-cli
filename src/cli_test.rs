@@ -338,7 +338,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
     });
     let row = table.lines().nth(1).expect("row");
     let assignee_byte = row.find("alice").expect("assignee");
-    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 60);
+    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 83);
     let six_columns = truncate_for_table("中文标题", 6);
     let five_columns = truncate_for_table("中文标题", 5);
     assert_eq!(UnicodeWidthStr::width(six_columns.as_str()), 6);

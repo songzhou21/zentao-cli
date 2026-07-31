@@ -19,6 +19,10 @@ use std::path::{Path, PathBuf};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
+const BUG_LIST_ID_WIDTH: usize = 6;
+const BUG_LIST_STATE_WIDTH: usize = 9;
+const BUG_LIST_TITLE_WIDTH: usize = 65;
+const BUG_LIST_ASSIGNEE_WIDTH: usize = 10;
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao", version, about = "在终端管理禅道 Bug")]
@@ -921,18 +925,23 @@ fn render_bug_list_table(result: &search::SearchResult) -> String {
     if result.bugs.is_empty() {
         return "没有找到 Bug。\n".to_string();
     }
-    let header =
-        "ID     STATE     TITLE                                      ASSIGNEE        OPENED";
-    let mut out = format!("{}\n", style_header(header));
+    let header = format!(
+        "{} {} {} {} OPENED",
+        pad_to_display_width("ID", BUG_LIST_ID_WIDTH),
+        pad_to_display_width("STATE", BUG_LIST_STATE_WIDTH),
+        pad_to_display_width("TITLE", BUG_LIST_TITLE_WIDTH),
+        pad_to_display_width("ASSIGNEE", BUG_LIST_ASSIGNEE_WIDTH),
+    );
+    let mut out = format!("{}\n", style_header(&header));
     for bug in &result.bugs {
         let state = canonical_state(&bug.status);
-        let state = colorize_state(&pad_to_display_width(state, 9), state);
+        let state = colorize_state(&pad_to_display_width(state, BUG_LIST_STATE_WIDTH), state);
         out.push_str(&format!(
             "{} {} {} {} {}\n",
-            pad_to_display_width(&bug.id.to_string(), 6),
+            pad_to_display_width(&bug.id.to_string(), BUG_LIST_ID_WIDTH),
             state,
-            truncate_for_table(&bug.title, 42),
-            truncate_for_table(&bug.assigned_to, 15),
+            truncate_for_table(&bug.title, BUG_LIST_TITLE_WIDTH),
+            truncate_for_table(&bug.assigned_to, BUG_LIST_ASSIGNEE_WIDTH),
             bug.opened_date.trim(),
         ));
     }
