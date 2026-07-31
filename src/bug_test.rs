@@ -268,12 +268,19 @@ fn parse_history_comments_should_absolutize_images_with_global_history_names() {
 </body></html>
 "#;
     let doc = Html::parse_document(html);
-    let history = extract_history_markdown(&doc, "http://shendao.sharexm.cn/zentao/bug-view-52676.html")
-        .expect("history should parse");
+    let history =
+        extract_history_markdown(&doc, "http://shendao.sharexm.cn/zentao/bug-view-52676.html")
+            .expect("history should parse");
 
-    assert!(history.contains("![history-img#1](http://shendao.sharexm.cn/zentao/file-read-64873.jpeg)"));
-    assert!(history.contains("![history-img#2](http://shendao.sharexm.cn/zentao/file-read-64907.png)"));
-    assert!(history.contains("![history-img#3](http://shendao.sharexm.cn/zentao/file-read-65380.png)"));
+    assert!(
+        history.contains("![history-img#1](http://shendao.sharexm.cn/zentao/file-read-64873.jpeg)")
+    );
+    assert!(
+        history.contains("![history-img#2](http://shendao.sharexm.cn/zentao/file-read-64907.png)")
+    );
+    assert!(
+        history.contains("![history-img#3](http://shendao.sharexm.cn/zentao/file-read-65380.png)")
+    );
 }
 
 // 转义的方括号应被还原。

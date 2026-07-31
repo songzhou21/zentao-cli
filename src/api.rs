@@ -16,7 +16,6 @@ pub struct ZentaoApi {
 pub struct LoginResult {
     pub cookies: Vec<BrowserCookieItem>,
     pub login_response_body: String,
-    pub set_cookies_by_url: Vec<(String, Vec<String>)>,
 }
 
 impl ZentaoApi {
@@ -210,7 +209,6 @@ impl ZentaoApi {
             .to_string();
 
         let mut cookie_map: HashMap<String, BrowserCookieItem> = HashMap::new();
-        let mut set_cookies_by_url: Vec<(String, Vec<String>)> = Vec::new();
 
         let page_resp = self
             .client
@@ -224,7 +222,6 @@ impl ZentaoApi {
             &mut cookie_map,
             parse_set_cookie_items(&set_cookie_page, &target_host)?,
         );
-        set_cookies_by_url.push((login_page_url.clone(), set_cookie_page));
 
         let verify_rand = parse_verify_rand(&page_html)?;
         let password_hash = md5_hex(&format!("{}{}", md5_hex(password), verify_rand));
@@ -268,7 +265,6 @@ impl ZentaoApi {
             &mut cookie_map,
             parse_set_cookie_items(&set_cookie_login, &target_host)?,
         );
-        set_cookies_by_url.push((login_url.clone(), set_cookie_login));
 
         let my_resp = self
             .client
@@ -289,7 +285,6 @@ impl ZentaoApi {
             &mut cookie_map,
             parse_set_cookie_items(&set_cookie_my, &target_host)?,
         );
-        set_cookies_by_url.push((my_url, set_cookie_my));
 
         let mut cookies: Vec<BrowserCookieItem> = cookie_map.into_values().collect();
         cookies.sort_by(|a, b| a.name.cmp(&b.name));
@@ -300,12 +295,16 @@ impl ZentaoApi {
         Ok(LoginResult {
             cookies,
             login_response_body,
-            set_cookies_by_url,
         })
     }
 }
 
-fn fetch_text_url(client: &Client, url: &str, cookie: &str, action: &str) -> Result<(String, String)> {
+fn fetch_text_url(
+    client: &Client,
+    url: &str,
+    cookie: &str,
+    action: &str,
+) -> Result<(String, String)> {
     let resp = client
         .get(url)
         .header("Cookie", cookie)
@@ -317,7 +316,12 @@ fn fetch_text_url(client: &Client, url: &str, cookie: &str, action: &str) -> Res
     let body = resp.text().context("读取响应体失败")?.to_string();
 
     if !status.is_success() {
-        return Err(anyhow!("{}: HTTP {} ({})", action, status.as_u16(), final_url));
+        return Err(anyhow!(
+            "{}: HTTP {} ({})",
+            action,
+            status.as_u16(),
+            final_url
+        ));
     }
     if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
         return Err(anyhow!("{}: cookie 无效或已过期", action));
@@ -564,7 +568,7 @@ fn build_search_form(
         value: String,
     }
 
-    let mut slots = vec![
+    let mut slots = [
         Slot {
             and_or: "AND",
             field: "assignedTo",
@@ -786,7 +790,7 @@ fn compact_search_form_for_submit(form: Vec<(String, String)>) -> Vec<(String, S
         .collect()
 }
 
-fn set_form_value(form: &mut Vec<(String, String)>, key: &str, value: &str) {
+fn set_form_value(form: &mut [(String, String)], key: &str, value: &str) {
     if let Some(entry) = form.iter_mut().find(|(k, _)| k == key) {
         entry.1 = value.to_string();
     }

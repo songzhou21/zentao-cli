@@ -261,10 +261,12 @@ fn normalize_bracket_heading_bold_scope(markdown: &str) -> Result<String> {
     let mut out = open_re.replace_all(markdown, "**$1**\n").to_string();
 
     // 清理因原始转换导致附着在图片前后的残留加粗标记。
-    let leading_re = Regex::new(r"\*\*(!\[[^\]]*\]\([^)]+\))").context("构建图片前置加粗正则失败")?;
+    let leading_re =
+        Regex::new(r"\*\*(!\[[^\]]*\]\([^)]+\))").context("构建图片前置加粗正则失败")?;
     out = leading_re.replace_all(&out, "$1").to_string();
 
-    let trailing_re = Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建图片后置加粗正则失败")?;
+    let trailing_re =
+        Regex::new(r"(!\[[^\]]*\]\([^)]+\))\*\*").context("构建图片后置加粗正则失败")?;
     out = trailing_re.replace_all(&out, "$1").to_string();
     Ok(out)
 }
@@ -294,7 +296,9 @@ fn extract_embedded_attachments(markdown: &str) -> (String, Vec<BugAttachment>) 
             }
         }
 
-        if line_has_zip && (line.contains("report_user_url") || line.contains("report\\_user\\_url")) {
+        if line_has_zip
+            && (line.contains("report_user_url") || line.contains("report\\_user\\_url"))
+        {
             continue;
         }
         kept_lines.push(line);
@@ -303,7 +307,11 @@ fn extract_embedded_attachments(markdown: &str) -> (String, Vec<BugAttachment>) 
     (kept_lines.join("\n").trim().to_string(), attachments)
 }
 
-fn push_embedded_attachment(url: &str, seen: &mut HashSet<String>, attachments: &mut Vec<BugAttachment>) {
+fn push_embedded_attachment(
+    url: &str,
+    seen: &mut HashSet<String>,
+    attachments: &mut Vec<BugAttachment>,
+) {
     if url.is_empty() {
         return;
     }
@@ -324,7 +332,10 @@ fn push_embedded_attachment(url: &str, seen: &mut HashSet<String>, attachments: 
     });
 }
 
-fn merge_attachments(mut primary: Vec<BugAttachment>, extra: Vec<BugAttachment>) -> Vec<BugAttachment> {
+fn merge_attachments(
+    mut primary: Vec<BugAttachment>,
+    extra: Vec<BugAttachment>,
+) -> Vec<BugAttachment> {
     let mut seen: HashSet<String> = primary.iter().map(|item| item.url.clone()).collect();
     for attachment in extra {
         if seen.insert(attachment.url.clone()) {
@@ -436,7 +447,8 @@ fn extract_history_header(li: &ElementRef<'_>) -> String {
                     continue;
                 }
                 if let Some(child_ref) = ElementRef::wrap(child) {
-                    let normalized = normalize_text_whitespace(&child_ref.text().collect::<String>());
+                    let normalized =
+                        normalize_text_whitespace(&child_ref.text().collect::<String>());
                     if !normalized.is_empty() {
                         parts.push(normalized);
                     }
@@ -515,7 +527,10 @@ fn parse_change_lines(text: &str, source_html: Option<&str>) -> Result<Vec<Histo
 
     let mut details = Vec::new();
     for segment in segments {
-        if segment.is_empty() || should_hide_routine_change(&segment) || is_rich_text_change(&segment) {
+        if segment.is_empty()
+            || should_hide_routine_change(&segment)
+            || is_rich_text_change(&segment)
+        {
             continue;
         }
         details.push(HistoryDetail::Change(segment));
@@ -546,7 +561,10 @@ fn should_hide_routine_change(segment: &str) -> bool {
 }
 
 fn is_rich_text_change(segment: &str) -> bool {
-    segment.trim_end_matches('：').trim_end().ends_with("区别为")
+    segment
+        .trim_end_matches('：')
+        .trim_end()
+        .ends_with("区别为")
 }
 
 fn extract_history_comments(
@@ -558,7 +576,9 @@ fn extract_history_comments(
     let mut comments = Vec::new();
 
     for comment in li.select(&comment_sel) {
-        let mut markdown = html2md::parse_html(&comment.inner_html()).trim().to_string();
+        let mut markdown = html2md::parse_html(&comment.inner_html())
+            .trim()
+            .to_string();
         let (converted, next_idx) = absolutize_markdown_image_urls_with_prefix_and_start(
             &markdown,
             page_url,

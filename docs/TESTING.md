@@ -6,7 +6,7 @@
 
 - 优先保证回归稳定性
 - 以单元测试为主，聚焦核心规则
-- `bug show` 使用固化 HTML fixture 做解析回归
+- `bug view` 使用固化 HTML fixture 做解析回归
 - 避免依赖真实禅道、真实 Chrome 环境
 
 ## 测试分层
@@ -24,6 +24,7 @@
 重点：
 
 - 参数与分支逻辑
+- `bug list/view`、认证、配置和 JSON 字段契约
 - 错误路径与边界条件
 - 核心业务规则断言
 
@@ -48,6 +49,7 @@ cargo test
 ```bash
 cargo test bug::tests
 cargo test browser::tests
+cargo test cli::tests
 ```
 
 ## 当前限制

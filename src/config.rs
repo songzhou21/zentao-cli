@@ -13,8 +13,10 @@ pub enum CookieSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub url: String,
+    #[serde(default, alias = "url", skip_serializing_if = "String::is_empty")]
+    pub site: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chrome_profile: Option<String>,
     #[serde(default, skip_serializing_if = "is_default_cookie_source")]

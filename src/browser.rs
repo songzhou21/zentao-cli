@@ -3,7 +3,7 @@ use anyhow::{anyhow, Context, Result};
 use cbc::Decryptor;
 use cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use pbkdf2::pbkdf2_hmac_array;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use std::cmp::Reverse;
@@ -11,8 +11,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tempfile::NamedTempFile;
 use url::Url;
+
+const CHROME_COOKIE_READ_ATTEMPTS: usize = 3;
+const CHROME_COOKIE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(150);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserCookieItem {
@@ -44,6 +46,27 @@ pub fn load_zentao_cookie_from_chrome_macos(
     site_url: &str,
     profile_override: Option<&str>,
 ) -> Result<BrowserCookieResult> {
+    let mut last_error = None;
+    for attempt in 0..CHROME_COOKIE_READ_ATTEMPTS {
+        match load_zentao_cookie_from_chrome_macos_once(site_url, profile_override) {
+            Ok(cookie) => return Ok(cookie),
+            Err(error)
+                if attempt + 1 < CHROME_COOKIE_READ_ATTEMPTS
+                    && is_retryable_cookie_error(&error) =>
+            {
+                last_error = Some(error);
+                std::thread::sleep(CHROME_COOKIE_RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last_error.expect("cookie read attempts must produce an error"))
+}
+
+fn load_zentao_cookie_from_chrome_macos_once(
+    site_url: &str,
+    profile_override: Option<&str>,
+) -> Result<BrowserCookieResult> {
     ensure_macos()?;
 
     let parsed = Url::parse(site_url).context("解析 URL 失败")?;
@@ -66,38 +89,10 @@ pub fn load_zentao_cookie_from_chrome_macos(
         ));
     }
 
-    let temp = NamedTempFile::new().context("创建临时数据库失败")?;
-    let temp_db_path = temp.path().to_path_buf();
-    fs::copy(&db_path, &temp_db_path).with_context(|| {
-        format!(
-            "复制 Cookies 数据库失败: {} -> {}",
-            db_path.display(),
-            temp_db_path.display()
-        )
-    })?;
-    let _ = copy_if_exists(
-        &db_path.with_file_name("Cookies-wal"),
-        &temp_db_path.with_file_name(format!(
-            "{}-wal",
-            temp_db_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-        )),
-    );
-    let _ = copy_if_exists(
-        &db_path.with_file_name("Cookies-shm"),
-        &temp_db_path.with_file_name(format!(
-            "{}-shm",
-            temp_db_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-        )),
-    );
-
-    let conn = Connection::open(&temp_db_path)
-        .with_context(|| format!("打开 Cookies 数据库失败: {}", temp_db_path.display()))?;
+    let conn = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("打开 Cookies 数据库失败: {}", db_path.display()))?;
+    conn.busy_timeout(CHROME_COOKIE_RETRY_DELAY)
+        .context("等待 Chrome Cookies 数据库失败")?;
 
     let key = chrome_safe_storage_key()?;
 
@@ -180,6 +175,18 @@ pub fn load_zentao_cookie_from_chrome_macos(
         items,
         profile_path: profile_dir.to_string_lossy().to_string(),
     })
+}
+
+fn is_retryable_cookie_error(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    [
+        "未找到匹配站点的 zp cookie",
+        "打开 Cookies 数据库失败",
+        "查询 Cookies 失败",
+        "读取 Cookies 失败",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
 }
 
 fn ensure_macos() -> Result<()> {
@@ -328,10 +335,10 @@ fn find_latest_chrome_profile() -> Result<String> {
             .ok()
     });
 
-    Ok(profiles
+    profiles
         .first()
         .cloned()
-        .ok_or_else(|| anyhow!("未找到 Chrome profile（含 Cookies）"))?)
+        .ok_or_else(|| anyhow!("未找到 Chrome profile（含 Cookies）"))
 }
 
 fn chrome_profiles_root() -> Result<PathBuf> {
@@ -378,13 +385,6 @@ fn collect_chrome_profiles(root: &Path) -> Result<Vec<String>> {
     }
 
     Ok(profiles)
-}
-
-fn copy_if_exists(src: &Path, dst: &Path) -> Result<()> {
-    if src.exists() {
-        fs::copy(src, dst).with_context(|| format!("复制文件失败: {}", src.display()))?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

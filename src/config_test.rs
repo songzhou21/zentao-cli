@@ -16,14 +16,16 @@ fn save_and_load_config() {
     let path = dir.path().join("nested").join("config.json");
 
     let cfg = Config {
-        url: "http://example.com/zentao".to_string(),
+        site: "http://example.com/zentao".to_string(),
+        product: Some(92),
         chrome_profile: Some("/tmp/profile".to_string()),
         cookie_source: CookieSource::File,
     };
     save_config(&path, &cfg).expect("save should succeed");
 
     let loaded = load_config(&path).expect("load should succeed");
-    assert_eq!(loaded.url, cfg.url);
+    assert_eq!(loaded.site, cfg.site);
+    assert_eq!(loaded.product, cfg.product);
     assert_eq!(loaded.chrome_profile, cfg.chrome_profile);
 }
 
@@ -37,7 +39,7 @@ fn load_optional_and_default_when_missing() {
     assert!(got.is_none());
 
     let got = load_or_default(&missing).expect("default load should succeed");
-    assert!(got.url.is_empty());
+    assert!(got.site.is_empty());
     assert!(got.chrome_profile.is_none());
     assert_eq!(got.cookie_source, CookieSource::Chrome);
 }

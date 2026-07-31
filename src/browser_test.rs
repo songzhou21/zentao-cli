@@ -126,3 +126,14 @@ fn test_choose_best_by_latest_access_when_path_equal() {
     let best = choose_best_by_path(&items, "zp").expect("best cookie should exist");
     assert_eq!(best.value, "new-session");
 }
+
+#[test]
+fn test_retryable_cookie_errors() {
+    assert!(is_retryable_cookie_error(&anyhow!(
+        "Chrome 中未找到匹配站点的 zp cookie"
+    )));
+    assert!(is_retryable_cookie_error(&anyhow!(
+        "查询 Cookies 失败: database is locked"
+    )));
+    assert!(!is_retryable_cookie_error(&anyhow!("当前仅支持 macOS")));
+}
