@@ -923,7 +923,7 @@ fn print_json(value: &Value) -> Result<()> {
 
 fn render_bug_list_table(result: &search::SearchResult) -> String {
     if result.bugs.is_empty() {
-        return "没有找到 Bug。\n".to_string();
+        return "没有找到 Bug\n".to_string();
     }
     let header = format!(
         "{} {} {} {} OPENED",

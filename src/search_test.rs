@@ -18,6 +18,13 @@ fn parses_empty_search_fixture() {
 }
 
 #[test]
+fn missing_table_is_empty_result() {
+    let html = "<html><title>享脉企业版-Bug - 禅道</title><body></body></html>";
+    let result = parse_search_result(html).expect("parse");
+    assert!(result.bugs.is_empty());
+}
+
+#[test]
 fn rejects_login_page() {
     let html = "<html><title>用户登录</title><body></body></html>";
     let err = parse_search_result(html).expect_err("must reject");

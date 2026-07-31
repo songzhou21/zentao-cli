@@ -38,10 +38,13 @@ pub fn parse_search_result(html: &str) -> Result<SearchResult> {
     let table_sel = sel(
         "table#bugList, form#bugForm table.datatable, form.table-bug table, .main-table.table-bug table.datatable",
     );
-    let table = doc
-        .select(&table_sel)
-        .next()
-        .ok_or_else(|| anyhow!("搜索结果页未找到 bug 列表表格"))?;
+    let Some(table) = doc.select(&table_sel).next() else {
+        // No list table: treat as empty result (e.g. zero matches).
+        return Ok(SearchResult {
+            bugs: Vec::new(),
+            total: None,
+        });
+    };
 
     let strict_row_sel = sel("tbody tr[data-id], tr[data-id]");
     let loose_row_sel = sel("tbody tr, tr");
