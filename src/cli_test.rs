@@ -2,6 +2,78 @@ use super::*;
 use clap::Parser;
 use reqwest::Url;
 use serde_json::json;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+#[derive(Clone)]
+struct ImageResponsePlan {
+    path: &'static str,
+    status: u16,
+    location: Option<&'static str>,
+    content_type: &'static str,
+    body: &'static [u8],
+}
+
+fn spawn_image_server(
+    plans: Vec<ImageResponsePlan>,
+) -> (String, Arc<Mutex<Vec<String>>>, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind should succeed");
+    let addr = listener.local_addr().expect("local addr should exist");
+    let cookies = Arc::new(Mutex::new(Vec::new()));
+    let cookies_bg = Arc::clone(&cookies);
+    let handle = thread::spawn(move || {
+        for _ in 0..plans.len() {
+            let (mut stream, _) = listener.accept().expect("accept should succeed");
+            let mut buf = [0_u8; 4096];
+            let n = stream.read(&mut buf).expect("read should succeed");
+            let request = String::from_utf8_lossy(&buf[..n]);
+            if let Some(value) = request
+                .lines()
+                .find(|line| line.to_ascii_lowercase().starts_with("cookie:"))
+                .and_then(|line| {
+                    line.split_once(':')
+                        .map(|(_, value)| value.trim().to_string())
+                })
+            {
+                cookies_bg.lock().expect("lock should succeed").push(value);
+            }
+            let path = request
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or("/");
+            let plan = plans
+                .iter()
+                .find(|plan| plan.path == path)
+                .expect("expected request path");
+            let status_text = match plan.status {
+                200 => "OK",
+                302 => "Found",
+                _ => "Internal Server Error",
+            };
+            let mut response = format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                plan.status,
+                status_text,
+                plan.content_type,
+                plan.body.len()
+            );
+            if let Some(location) = plan.location {
+                response.push_str(&format!("Location: {location}\r\n"));
+            }
+            response.push_str("\r\n");
+            stream
+                .write_all(response.as_bytes())
+                .expect("write headers should succeed");
+            stream
+                .write_all(plan.body)
+                .expect("write body should succeed");
+        }
+    });
+    (format!("http://{addr}"), cookies, handle)
+}
 
 #[test]
 fn global_options_and_bug_list_parse() {
@@ -46,6 +118,67 @@ fn global_options_and_bug_list_parse() {
 }
 
 #[test]
+fn bug_list_limit_must_be_positive() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "list", "--limit", "0"]).is_err());
+}
+
+#[test]
+fn default_active_state_slot_limit_error_suggests_state_all() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--title",
+        "A",
+        "--title",
+        "B",
+        "--module",
+        "1",
+        "--assignee",
+        "alice",
+        "--resolved-by",
+        "bob",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+
+    let error =
+        validate_search_group_limits(&args).expect_err("default active exceeds group limit");
+    assert!(error.to_string().contains("--state all"));
+
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--title",
+        "A",
+        "--title",
+        "B",
+        "--module",
+        "1",
+        "--assignee",
+        "alice",
+        "--resolved-by",
+        "bob",
+        "--state",
+        "all",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    validate_search_group_limits(&args).expect("state all releases the slot");
+}
+
+#[test]
 fn removed_search_and_bug_show_are_rejected() {
     assert!(Cli::try_parse_from(["zentao", "search"]).is_err());
     assert!(Cli::try_parse_from(["zentao", "bug", "show", "1"]).is_err());
@@ -61,6 +194,17 @@ fn auth_login_has_no_password_argument() {
         "alice",
         "--password",
         "secret",
+    ])
+    .is_err());
+    assert!(Cli::try_parse_from([
+        "zentao",
+        "auth",
+        "login",
+        "--username",
+        "alice",
+        "--password-stdin",
+        "--cookie-file",
+        "/tmp/cookies",
     ])
     .is_err());
 }
@@ -91,6 +235,13 @@ fn bug_view_id_requires_site() {
 }
 
 #[test]
+fn bug_view_json_and_output_conflict() {
+    assert!(
+        Cli::try_parse_from(["zentao", "bug", "view", "1", "--json", "-o", "bug.json",]).is_err()
+    );
+}
+
+#[test]
 fn json_fields_are_selected_and_normalized() {
     let result = search::SearchResult {
         bugs: vec![search::BugRow {
@@ -112,7 +263,7 @@ fn json_fields_are_selected_and_normalized() {
     let got = render_list_json(
         &result,
         "http://example.com/zentao",
-        "id,state,confirmed,resolvedDate,url",
+        "id,state,confirmed,openedDate,resolvedDate,url",
     )
     .expect("json");
     assert_eq!(
@@ -121,6 +272,7 @@ fn json_fields_are_selected_and_normalized() {
             "id": 1,
             "state": "active",
             "confirmed": true,
+            "openedDate": "07-31 10:00",
             "resolvedDate": null,
             "url": "http://example.com/zentao/bug-view-1.html"
         }])
@@ -128,9 +280,95 @@ fn json_fields_are_selected_and_normalized() {
 }
 
 #[test]
+fn result_limit_applies_to_table_and_json() {
+    let row = search::BugRow {
+        id: 1,
+        severity: "2".to_string(),
+        pri: "3".to_string(),
+        confirmed: "是".to_string(),
+        title: "第一条".to_string(),
+        status: "激活".to_string(),
+        opened_by: "alice".to_string(),
+        opened_date: "07-31 10:00".to_string(),
+        assigned_to: "bob".to_string(),
+        resolved_date: String::new(),
+        resolution: String::new(),
+        deadline: String::new(),
+    };
+    let mut result = search::SearchResult {
+        bugs: vec![
+            row.clone(),
+            search::BugRow {
+                id: 2,
+                title: "第二条".to_string(),
+                ..row
+            },
+        ],
+        total: None,
+    };
+
+    apply_result_limit(&mut result, 1);
+    assert_eq!(result.bugs.len(), 1);
+    let table = render_bug_list_table(&result);
+    assert!(table.contains("第一条"));
+    assert!(!table.contains("第二条"));
+    let json = render_list_json(&result, "http://example.com", "id,title").expect("json");
+    assert_eq!(json, json!([{ "id": 1, "title": "第一条" }]));
+}
+
+#[test]
+fn bug_table_uses_terminal_display_width_for_cjk_text() {
+    let bug = search::BugRow {
+        id: 1,
+        severity: String::new(),
+        pri: String::new(),
+        confirmed: String::new(),
+        title: "中文标题".to_string(),
+        status: "active".to_string(),
+        opened_by: String::new(),
+        opened_date: "07-31 10:00".to_string(),
+        assigned_to: "alice".to_string(),
+        resolved_date: String::new(),
+        resolution: String::new(),
+        deadline: String::new(),
+    };
+    let table = render_bug_list_table(&search::SearchResult {
+        bugs: vec![bug],
+        total: None,
+    });
+    let row = table.lines().nth(1).expect("row");
+    let assignee_byte = row.find("alice").expect("assignee");
+    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 60);
+    let six_columns = truncate_for_table("中文标题", 6);
+    let five_columns = truncate_for_table("中文标题", 5);
+    assert_eq!(UnicodeWidthStr::width(six_columns.as_str()), 6);
+    assert_eq!(UnicodeWidthStr::width(five_columns.as_str()), 5);
+}
+
+#[test]
 fn unknown_json_field_is_rejected() {
     let err = parse_json_fields("id,unknown", LIST_JSON_FIELDS).expect_err("must fail");
     assert!(err.to_string().contains("不支持 JSON 字段"));
+}
+
+#[test]
+fn invalid_json_fields_are_rejected_before_io() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let invalid_config = dir.path().join("invalid.json");
+    fs::write(&invalid_config, "{").expect("write invalid config");
+
+    for command in [
+        vec!["bug", "list", "--json=unknown"],
+        vec!["bug", "view", "1", "--json=unknown"],
+    ] {
+        let mut args = vec![
+            OsString::from("--config"),
+            invalid_config.as_os_str().to_os_string(),
+        ];
+        args.extend(command.into_iter().map(OsString::from));
+        let error = run(args).expect_err("must fail");
+        assert!(error.to_string().contains("不支持 JSON 字段"));
+    }
 }
 
 #[test]
@@ -155,15 +393,59 @@ fn bare_json_selects_all_fields() {
 }
 
 #[test]
+fn json_fields_require_equals_syntax() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--json=id,title"])
+        .expect("equals syntax should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::List(args),
+        }) => assert_eq!(args.json.as_deref(), Some("id,title")),
+        _ => panic!("unexpected command"),
+    }
+
+    assert!(Cli::try_parse_from(["zentao", "bug", "list", "--json", "id,title"]).is_err());
+}
+
+#[test]
+fn bare_json_does_not_consume_bug_id() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "view", "--json", "57801"])
+        .expect("bare json should not consume the bug ID");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::View(args),
+        }) => {
+            assert_eq!(args.bug, "57801");
+            assert_eq!(args.json.as_deref(), Some(""));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn clap_parameter_errors_keep_clap_exit_code() {
+    let error = run(vec![
+        OsString::from("bug"),
+        OsString::from("list"),
+        OsString::from("--limit"),
+        OsString::from("0"),
+    ])
+    .expect_err("invalid limit must fail during clap parsing");
+
+    match error {
+        RunError::Clap(error) => assert_eq!(error.exit_code(), 2),
+        RunError::Runtime(error) => panic!("expected clap error, got runtime error: {error}"),
+    }
+}
+
+#[test]
 fn view_json_exposes_description_and_history_images() {
     let detail = bug::BugDetail {
         title: "标题".to_string(),
         markdown_description: "![截图](http://example.com/description.png)".to_string(),
-        markdown_history: "- 备注：![历史图片](http://example.com/history.jpeg)".to_string(),
+        markdown_history: "- 备注：![重复截图](http://example.com/description.png) ![历史图片](http://example.com/history.jpeg)".to_string(),
         attachments: vec![],
     };
-    let got =
-        render_view_json(1, "http://example.com/bug-view-1.html", &detail, "images").expect("json");
+    let got = render_view_json(1, "http://example.com", &detail, "images").expect("json");
     assert_eq!(
         got,
         json!({
@@ -172,6 +454,27 @@ fn view_json_exposes_description_and_history_images() {
                 "http://example.com/history.jpeg"
             ]
         })
+    );
+}
+
+#[test]
+fn view_json_url_is_canonical() {
+    let detail = bug::BugDetail {
+        title: "标题".to_string(),
+        markdown_description: String::new(),
+        markdown_history: String::new(),
+        attachments: vec![],
+    };
+    let got = render_view_json(
+        1,
+        "http://example.com/zentao/?tid=temporary",
+        &detail,
+        "url",
+    )
+    .expect("json");
+    assert_eq!(
+        got,
+        json!({ "url": "http://example.com/zentao/bug-view-1.html" })
     );
 }
 
@@ -191,6 +494,18 @@ fn cookie_table_masks_values_by_default() {
     assert!(!masked.contains("secret"));
     let shown = render_cookie_table(&rows, true).join("\n");
     assert!(shown.contains("secret"));
+}
+
+#[test]
+fn auth_status_markers_are_plain_text_when_not_a_tty() {
+    assert_eq!(cookie_presence_label(true), "[OK]");
+    assert_eq!(cookie_presence_label(false), "[MISSING]");
+    assert_eq!(current_profile_marker(true), " [当前]");
+    assert_eq!(
+        format_cookie_domains_line(&["example.com".to_string()]),
+        "example.com [OK]"
+    );
+    assert_eq!(format_cookie_domains_line(&[]), "(none) [MISSING]");
 }
 
 #[test]
@@ -216,6 +531,88 @@ fn image_url_validation_still_rejects_non_http() {
     assert!(validate_image_url("https://example.com/a.png").is_ok());
     assert!(validate_image_url("file:///tmp/a.png").is_err());
     assert!(validate_image_url("").is_err());
+}
+
+#[test]
+fn image_download_rejects_login_html_and_accepts_images() {
+    let cases = [
+        (
+            "login redirect",
+            vec![
+                ImageResponsePlan {
+                    path: "/image.png",
+                    status: 302,
+                    location: Some("/user-login-test.html"),
+                    content_type: "text/html",
+                    body: b"",
+                },
+                ImageResponsePlan {
+                    path: "/user-login-test.html",
+                    status: 200,
+                    location: None,
+                    content_type: "text/html",
+                    body: b"<html>login</html>",
+                },
+            ],
+            false,
+        ),
+        (
+            "html response",
+            vec![ImageResponsePlan {
+                path: "/image.png",
+                status: 200,
+                location: None,
+                content_type: "text/html",
+                body: b"<html>login</html>",
+            }],
+            false,
+        ),
+        (
+            "png response",
+            vec![ImageResponsePlan {
+                path: "/image.png",
+                status: 200,
+                location: None,
+                content_type: "image/png",
+                body: b"\x89PNG\r\n",
+            }],
+            true,
+        ),
+    ];
+
+    for (_name, plans, should_succeed) in cases {
+        let (site, seen_cookies, handle) = spawn_image_server(plans);
+        let url = Url::parse(&format!("{site}/image.png")).expect("image url");
+        let dir = tempfile::tempdir().expect("temp dir");
+        let out = dir.path().join("image.png");
+        let result = download_single_image(&url, "zp=test", &out);
+
+        handle.join().expect("server should join");
+        assert!(
+            seen_cookies
+                .lock()
+                .expect("lock should succeed")
+                .iter()
+                .all(|cookie| cookie == "zp=test"),
+            "Cookie header should be sent on every request"
+        );
+        if should_succeed {
+            result.expect("image should download");
+            assert_eq!(fs::read(&out).expect("image should exist"), b"\x89PNG\r\n");
+        } else {
+            result.expect_err("non-image response should fail");
+            assert!(!out.exists(), "failed download must not create a file");
+        }
+    }
+}
+
+#[test]
+fn image_url_derives_zentao_site_for_cookie_lookup() {
+    let image = Url::parse("http://example.com/zentao/file-read-1.png").expect("url");
+    assert_eq!(
+        derive_site_url_from_image_url(&image).expect("site"),
+        "http://example.com/zentao"
+    );
 }
 
 #[test]

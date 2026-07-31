@@ -35,16 +35,20 @@ zentao bug list --module 1099
 
 `bug list` 默认查询 `active` 状态、最多返回 30 条。产品范围来自 `--product`、`ZENTAO_PRODUCT` 或配置；缺失时先提示用户配置产品，不要猜测产品 ID。
 
+禅道搜索有两组、各三个条件槽位。默认 `active` 状态也会占用一个槽位；筛选条件触及上限且不需状态筛选时，使用 `--state all` 释放该槽位。
+
 用户明确需要 JSON、脚本消费或字段筛选时，使用字段化 JSON：
 
 ```bash
 zentao bug view 57801 --json
-zentao bug list --json id,title,state,assignee
+zentao bug list --json=id,title,state,assignee
 ```
 
-`--json` 单独使用时输出全部字段；传字段列表时只输出指定字段。
+`--json` 单独使用时输出全部字段；传字段列表时必须使用等号形式，例如 `--json=id,title`，以免吞掉 Bug ID 等位置参数。
 
 可用列表字段：`id`、`title`、`state`、`severity`、`priority`、`confirmed`、`openedBy`、`openedDate`、`assignee`、`resolvedDate`、`resolution`、`deadline`、`url`。
+
+`openedDate`、`resolvedDate` 和 `deadline` 保留禅道列表的原始日期文本，可能省略年份；不要把它们当作完整 ISO 日期或自行补全年份。
 
 ## 查看详情
 
@@ -53,7 +57,7 @@ zentao bug list --json id,title,state,assignee
 ```bash
 zentao bug view 57801
 zentao bug view http://shendao.sharexm.cn/zentao/bug-view-57801.html
-zentao bug view 57801 --json id,title,description,images,attachments
+zentao bug view 57801 --json=id,title,description,images,attachments
 ```
 
 传 URL 时，使用 URL 自己的站点；传 ID 时需要已配置的 Site。JSON 的 `images` 字段列出描述与历史记录中的图片 URL。默认输出 Markdown，包含 `# Bug #<id> <标题>`、`## 描述`、`## 历史记录` 和 `## 附件`。
@@ -68,6 +72,8 @@ zentao bug view 57801 --json id,title,description,images,attachments
 zentao image download --url "<image-url>" -o "/tmp/bug-<id>"
 ```
 
+下载会使用当前 ZenTao Cookie；登录页或非图片响应会失败，不要把失败响应当作图片处理。
+
 分析结论应结合描述、截图和日志时序；不要只根据标题下结论。
 
 ## 认证失败
@@ -79,4 +85,4 @@ zentao auth status
 zentao config list
 ```
 
-默认 Cookie 来源是 Chrome；`auth login` 成功后会改用本地 `file` Cookie。除非用户要求，不要显示 Cookie 值。
+默认 Cookie 来源是 Chrome；`auth login` 成功后会改用本地 `file` Cookie。

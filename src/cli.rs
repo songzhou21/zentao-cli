@@ -7,19 +7,18 @@ use crate::cookie_store;
 use crate::search;
 use anyhow::{anyhow, Context, Result};
 use chrono::{TimeZone, Utc};
-use clap::error::ErrorKind;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use regex::Regex;
 use reqwest::Url;
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
-const API_VERSION: &str = "v1";
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao", version, about = "在终端管理禅道 Bug")]
@@ -70,8 +69,6 @@ struct LoginArgs {
     #[arg(long)]
     password_stdin: bool,
     #[arg(long)]
-    cookie_file: Option<String>,
-    #[arg(long)]
     proxy: Option<String>,
 }
 
@@ -106,10 +103,16 @@ struct BugViewArgs {
     #[arg(value_name = "ID|URL")]
     bug: String,
     /// 将 Markdown 写入文件
-    #[arg(short = 'o', long)]
+    #[arg(short = 'o', long, conflicts_with = "json")]
     output: Option<String>,
     /// 输出 JSON；可选指定字段：id,title,description,history,images,attachments,url
-    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "FIELDS")]
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "",
+        require_equals = true,
+        value_name = "FIELDS"
+    )]
     json: Option<String>,
 }
 
@@ -169,11 +172,23 @@ struct BugListArgs {
     product: Option<u64>,
 
     /// 最多返回的 Bug 数量
-    #[arg(short = 'L', long, default_value_t = 30, value_name = "N")]
+    #[arg(
+        short = 'L',
+        long,
+        default_value_t = 30,
+        value_parser = clap::value_parser!(u32).range(1..),
+        value_name = "N"
+    )]
     limit: u32,
 
     /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignee,resolvedDate,resolution,deadline,url
-    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "FIELDS")]
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "",
+        require_equals = true,
+        value_name = "FIELDS"
+    )]
     json: Option<String>,
 }
 
@@ -228,27 +243,34 @@ impl BugState {
     }
 }
 
-pub fn run(args: Vec<OsString>) -> Result<()> {
-    let cli = match Cli::try_parse_from(std::iter::once(OsString::from("zentao")).chain(args)) {
-        Ok(cli) => cli,
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
-            ) =>
-        {
-            error.print().context("输出 CLI 帮助失败")?;
-            return Ok(());
+#[derive(Debug)]
+pub enum RunError {
+    Clap(clap::Error),
+    Runtime(anyhow::Error),
+}
+
+impl std::fmt::Display for RunError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Clap(error) => error.fmt(formatter),
+            Self::Runtime(error) => error.fmt(formatter),
         }
-        Err(error) => return Err(anyhow!(error.to_string())),
-    };
+    }
+}
+
+impl std::error::Error for RunError {}
+
+pub fn run(args: Vec<OsString>) -> std::result::Result<(), RunError> {
+    let cli = Cli::try_parse_from(std::iter::once(OsString::from("zentao")).chain(args))
+        .map_err(RunError::Clap)?;
 
     match cli.command {
         Commands::Auth(args) => run_auth(args, &cli.global),
         Commands::Bug(args) => run_bug(args, &cli.global),
         Commands::Config(args) => run_config(args, &cli.global),
-        Commands::Image(args) => run_image(args),
+        Commands::Image(args) => run_image(args, &cli.global),
     }
+    .map_err(RunError::Runtime)
 }
 
 fn run_auth(args: AuthArgs, global: &GlobalArgs) -> Result<()> {
@@ -375,7 +397,7 @@ fn run_auth_status(args: AuthStatusArgs, global: &GlobalArgs) -> Result<()> {
         println!("{}", line);
     }
 
-    let client = ZentaoApi::new(&site_url, API_VERSION)?;
+    let client = ZentaoApi::new(&site_url)?;
     let final_url = client.verify_cookie(&cookie.cookie_header)?;
     println!("\nCookie 校验成功，最终跳转: {final_url}");
 
@@ -399,23 +421,26 @@ fn run_login(args: LoginArgs, global: &GlobalArgs) -> Result<()> {
         return Err(anyhow!("请使用 --password-stdin 通过标准输入提供密码"));
     }
     let password = read_login_password()?;
-    let api = ZentaoApi::new_with_proxy(&site_url, API_VERSION, args.proxy.as_deref())?;
+    let api = ZentaoApi::new_with_proxy(&site_url, args.proxy.as_deref())?;
     let login = api.login_with_password(&args.username, &password, true)?;
     let persist_items = select_persist_cookie_items(&login.cookies);
 
-    let cookie_file_path = resolve_cookie_file_path(args.cookie_file.as_deref())?;
+    let cookie_file_path = config::default_cookie_file_path()?;
     cookie_store::save_cookie_file(&cookie_file_path, &site_url, &persist_items)?;
-    cfg.site = site_url;
+    cfg.site = site_url.clone();
     cfg.cookie_source = CookieSource::File;
     config::save_config(&cfg_path, &cfg)?;
 
     let parsed_login = parse_login_response(&login.login_response_body);
     match parsed_login.result.as_deref() {
         Some("success") => println!(
-            "\x1b[1;32m登录成功，cookie 已保存: {}\x1b[0m",
-            cookie_file_path.display()
+            "{}",
+            style_success(&format!(
+                "登录成功，cookie 已保存: {}",
+                cookie_file_path.display()
+            ))
         ),
-        Some("fail") => println!("\x1b[1;31m登录失败\x1b[0m"),
+        Some("fail") => println!("{}", style_error("登录失败")),
         _ => println!(
             "登录响应: {}",
             format_login_response(&login.login_response_body)
@@ -425,6 +450,9 @@ fn run_login(args: LoginArgs, global: &GlobalArgs) -> Result<()> {
         if !message.is_empty() {
             println!("服务端消息: {}", message);
         }
+    }
+    if global.site.is_some() {
+        println!("已将 --site 保存为后续命令的默认 site: {site_url}");
     }
     Ok(())
 }
@@ -471,11 +499,8 @@ fn run_chrome_profile(_args: ProfileArgs, global: &GlobalArgs) -> Result<()> {
 
     println!("可用 Chrome profiles:");
     for (idx, profile) in profiles.iter().enumerate() {
-        let marker = if cfg.chrome_profile.as_deref() == Some(profile.as_str()) {
-            " \x1b[1;32m[当前]\x1b[0m"
-        } else {
-            ""
-        };
+        let marker =
+            current_profile_marker(cfg.chrome_profile.as_deref() == Some(profile.as_str()));
         println!("{}. {}{}", idx + 1, profile, marker);
     }
 
@@ -514,13 +539,14 @@ fn run_bug(args: BugArgs, global: &GlobalArgs) -> Result<()> {
     }
 }
 
-fn run_image(args: ImageArgs) -> Result<()> {
+fn run_image(args: ImageArgs, global: &GlobalArgs) -> Result<()> {
     match args.command {
-        ImageSubCommands::Download(d) => run_image_download(d),
+        ImageSubCommands::Download(d) => run_image_download(d, global),
     }
 }
 
 fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
+    validate_optional_json_fields(args.json.as_deref(), LIST_JSON_FIELDS)?;
     validate_search_group_limits(&args)?;
 
     let cfg_path = resolve_config_path(global.config.as_deref())?;
@@ -540,7 +566,7 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
         return Err(anyhow!("product 必须是正整数"));
     }
 
-    let api_client = ZentaoApi::new(&site_url, API_VERSION)?;
+    let api_client = ZentaoApi::new(&site_url)?;
     let cookie = load_cookie_for_site(&site_url, None, cfg.as_ref())?;
     let search_cookie_header = append_search_cookie_page_size(&cookie.cookie_header, args.limit);
 
@@ -600,7 +626,8 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
         eprintln!("[debug] 搜索结果 HTML 已写入 {debug_path}");
     }
 
-    let result = search::parse_search_result(&html)?;
+    let mut result = search::parse_search_result(&html)?;
+    apply_result_limit(&mut result, args.limit);
     if let Some(fields) = args.json.as_deref() {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
@@ -608,6 +635,10 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
         print!("{}", render_bug_list_table(&result));
     }
     Ok(())
+}
+
+fn apply_result_limit(result: &mut search::SearchResult, limit: u32) {
+    result.bugs.truncate(limit as usize);
 }
 
 fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
@@ -637,9 +668,10 @@ fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
         }
         if n > 3 {
             return Err(anyhow!(
-                "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）",
+                "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）。{}",
                 n,
-                title_count
+                title_count,
+                active_state_slot_hint(args),
             ));
         }
     } else {
@@ -667,8 +699,9 @@ fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
         }
         if total > 6 {
             return Err(anyhow!(
-                "当前搜索条件超过 6 个（实际 {} 个），请减少条件",
-                total
+                "当前搜索条件超过 6 个（实际 {} 个），请减少条件。{}",
+                total,
+                active_state_slot_hint(args),
             ));
         }
     }
@@ -680,6 +713,14 @@ fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn active_state_slot_hint(args: &BugListArgs) -> &'static str {
+    if matches!(args.state, BugState::Active) {
+        "active 状态（未指定 --state 时默认启用）占用一个条件槽位；如不需要状态筛选，请使用 --state all 释放该槽位"
+    } else {
+        ""
+    }
 }
 
 fn debug_enabled() -> bool {
@@ -735,6 +776,13 @@ fn parse_json_fields(raw: &str, supported: &[&str]) -> Result<Vec<String>> {
     Ok(fields)
 }
 
+fn validate_optional_json_fields(raw: Option<&str>, supported: &[&str]) -> Result<()> {
+    if let Some(raw) = raw {
+        parse_json_fields(raw, supported)?;
+    }
+    Ok(())
+}
+
 fn render_list_json(result: &search::SearchResult, site: &str, fields: &str) -> Result<Value> {
     let fields = parse_json_fields(fields, LIST_JSON_FIELDS)?;
     Ok(Value::Array(
@@ -766,16 +814,12 @@ fn list_json_value(bug: &search::BugRow, field: &str, site: &str) -> Value {
         "resolvedDate" => nullable_date(&bug.resolved_date),
         "resolution" => nullable_text(&bug.resolution),
         "deadline" => nullable_date(&bug.deadline),
-        "url" => json!(format!(
-            "{}/bug-view-{}.html",
-            site.trim_end_matches('/'),
-            bug.id
-        )),
+        "url" => json!(canonical_bug_url(site, bug.id)),
         _ => Value::Null,
     }
 }
 
-fn render_view_json(id: u64, url: &str, detail: &bug::BugDetail, fields: &str) -> Result<Value> {
+fn render_view_json(id: u64, site: &str, detail: &bug::BugDetail, fields: &str) -> Result<Value> {
     let fields = parse_json_fields(fields, VIEW_JSON_FIELDS)?;
     let images = extract_view_images(detail);
     let attachments: Vec<Value> = detail
@@ -798,7 +842,7 @@ fn render_view_json(id: u64, url: &str, detail: &bug::BugDetail, fields: &str) -
             "history" => json!(detail.markdown_history),
             "images" => Value::Array(images.clone()),
             "attachments" => Value::Array(attachments.clone()),
-            "url" => json!(url),
+            "url" => json!(canonical_bug_url(site, id)),
             _ => Value::Null,
         };
         out.insert(field, value);
@@ -806,9 +850,21 @@ fn render_view_json(id: u64, url: &str, detail: &bug::BugDetail, fields: &str) -
     Ok(Value::Object(out))
 }
 
+fn canonical_bug_url(site: &str, id: u64) -> String {
+    let base = Url::parse(site)
+        .map(|mut url| {
+            url.set_query(None);
+            url.set_fragment(None);
+            url.to_string()
+        })
+        .unwrap_or_else(|_| site.to_string());
+    format!("{}/bug-view-{id}.html", base.trim_end_matches('/'))
+}
+
 fn extract_view_images(detail: &bug::BugDetail) -> Vec<Value> {
     let image_re = Regex::new(r#"!\[[^\]]*\]\(([^\s)]+)(?:\s+\"[^\"]*\")?\)"#)
         .expect("image markdown regex must compile");
+    let mut seen = HashSet::new();
     [
         detail.markdown_description.as_str(),
         detail.markdown_history.as_str(),
@@ -817,8 +873,10 @@ fn extract_view_images(detail: &bug::BugDetail) -> Vec<Value> {
     .flat_map(|markdown| {
         image_re
             .captures_iter(markdown)
-            .filter_map(|capture| capture.get(1).map(|url| json!(url.as_str())))
+            .filter_map(|capture| capture.get(1).map(|url| url.as_str()))
     })
+    .filter(|url| seen.insert((*url).to_string()))
+    .map(|url| json!(url))
     .collect()
 }
 
@@ -868,13 +926,13 @@ fn render_bug_list_table(result: &search::SearchResult) -> String {
     let mut out = format!("{}\n", style_header(header));
     for bug in &result.bugs {
         let state = canonical_state(&bug.status);
-        let state = colorize_state(&format!("{state:<9}"), state);
+        let state = colorize_state(&pad_to_display_width(state, 9), state);
         out.push_str(&format!(
-            "{:<6} {} {:<42} {:<15} {}\n",
-            bug.id,
+            "{} {} {} {} {}\n",
+            pad_to_display_width(&bug.id.to_string(), 6),
             state,
-            truncate_for_table(&bug.title, 40),
-            truncate_for_table(&bug.assigned_to, 13),
+            truncate_for_table(&bug.title, 42),
+            truncate_for_table(&bug.assigned_to, 15),
             bug.opened_date.trim(),
         ));
     }
@@ -891,41 +949,68 @@ fn ansi_enabled() -> bool {
 }
 
 fn style_header(value: &str) -> String {
-    if ansi_enabled() {
-        format!("\x1b[1m{value}\x1b[0m")
-    } else {
-        value.to_string()
-    }
+    style_ansi(value, "1")
 }
 
 fn colorize_state(value: &str, state: &str) -> String {
-    if !ansi_enabled() {
-        return value.to_string();
-    }
     let color = match state {
         "active" => "33",
         "resolved" => "32",
         "closed" => "90",
         _ => "31",
     };
-    format!("\x1b[{color}m{value}\x1b[0m")
+    style_ansi(value, color)
+}
+
+fn style_success(value: &str) -> String {
+    style_ansi(value, "1;32")
+}
+
+fn style_error(value: &str) -> String {
+    style_ansi(value, "1;31")
+}
+
+fn style_ansi(value: &str, code: &str) -> String {
+    if ansi_enabled() {
+        format!("\x1b[{code}m{value}\x1b[0m")
+    } else {
+        value.to_string()
+    }
+}
+
+fn current_profile_marker(is_current: bool) -> String {
+    if is_current {
+        format!(" {}", style_success("[当前]"))
+    } else {
+        String::new()
+    }
 }
 
 fn truncate_for_table(value: &str, width: usize) -> String {
     let value = value.trim().replace(['\n', '\r'], " ");
-    let mut chars = value.chars();
-    let truncated: String = chars.by_ref().take(width).collect();
-    if chars.next().is_some() {
-        format!(
-            "{}…",
-            truncated
-                .chars()
-                .take(width.saturating_sub(1))
-                .collect::<String>()
-        )
-    } else {
-        truncated
+    if UnicodeWidthStr::width(value.as_str()) <= width {
+        return pad_to_display_width(&value, width);
     }
+
+    let ellipsis_width = UnicodeWidthChar::width('…').unwrap_or(1);
+    let available = width.saturating_sub(ellipsis_width);
+    let mut used = 0usize;
+    let mut truncated = String::new();
+    for character in value.chars() {
+        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
+        if used + character_width > available {
+            break;
+        }
+        truncated.push(character);
+        used += character_width;
+    }
+    truncated.push('…');
+    pad_to_display_width(&truncated, width)
+}
+
+fn pad_to_display_width(value: &str, width: usize) -> String {
+    let padding = width.saturating_sub(UnicodeWidthStr::width(value));
+    format!("{value}{}", " ".repeat(padding))
 }
 
 fn compact_debug_search_form(form: &[(String, String)]) -> Vec<(String, String)> {
@@ -1086,6 +1171,7 @@ fn render_compact_debug_form_lines(form: &[(String, String)]) -> Vec<String> {
 }
 
 fn run_bug_view(args: BugViewArgs, global: &GlobalArgs) -> Result<()> {
+    validate_optional_json_fields(args.json.as_deref(), VIEW_JSON_FIELDS)?;
     let cfg_path = resolve_config_path(global.config.as_deref())?;
     let cfg = config::load_config_optional(&cfg_path)?;
     let parsed_bug = parse_bug_input(
@@ -1096,7 +1182,7 @@ fn run_bug_view(args: BugViewArgs, global: &GlobalArgs) -> Result<()> {
             .or_else(|| cfg.as_ref().map(|c| c.site.as_str())),
     )?;
 
-    let api_client = ZentaoApi::new(&parsed_bug.site_url, API_VERSION)?;
+    let api_client = ZentaoApi::new(&parsed_bug.site_url)?;
     let cookie = load_cookie_for_site(&parsed_bug.site_url, None, cfg.as_ref())?;
     let (final_url, html) =
         api_client.fetch_bug_html(&parsed_bug.bug_url, &cookie.cookie_header)?;
@@ -1105,7 +1191,7 @@ fn run_bug_view(args: BugViewArgs, global: &GlobalArgs) -> Result<()> {
     let markdown = bug::render_markdown(parsed_bug.id, &detail);
 
     if let Some(fields) = args.json.as_deref() {
-        let json = render_view_json(parsed_bug.id, &final_url, &detail, fields)?;
+        let json = render_view_json(parsed_bug.id, &parsed_bug.site_url, &detail, fields)?;
         print_json(&json)?;
         return Ok(());
     }
@@ -1124,14 +1210,22 @@ fn run_bug_view(args: BugViewArgs, global: &GlobalArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_image_download(args: ImageDownloadArgs) -> Result<()> {
+fn run_image_download(args: ImageDownloadArgs, global: &GlobalArgs) -> Result<()> {
     let image_url = validate_image_url(&args.url)?;
-    let out_dir = Path::new(args.output_dir.as_deref().unwrap_or(IMAGE_DOWNLOAD_DIR));
-    fs::create_dir_all(out_dir).context("创建图片下载目录失败")?;
+    let cfg_path = resolve_config_path(global.config.as_deref())?;
+    let cfg = config::load_config_optional(&cfg_path)?;
+    let cookie_site = global
+        .site
+        .as_deref()
+        .filter(|site| !site.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or(derive_site_url_from_image_url(&image_url)?);
+    let cookie = load_cookie_for_site(&cookie_site, None, cfg.as_ref())?;
 
+    let out_dir = Path::new(args.output_dir.as_deref().unwrap_or(IMAGE_DOWNLOAD_DIR));
     let out_path = resolve_output_path_from_url(out_dir, &image_url);
     let started = std::time::Instant::now();
-    download_single_image(&image_url, &out_path)?;
+    download_single_image(&image_url, &cookie.cookie_header, &out_path)?;
     let elapsed_ms = started.elapsed().as_millis();
     println!(
         "Downloaded: {} -> {} ({}ms)",
@@ -1202,22 +1296,49 @@ fn unique_file_path(base_dir: &Path, filename: &str) -> PathBuf {
     }
 }
 
-fn download_single_image(url: &Url, out: &Path) -> Result<()> {
+fn download_single_image(url: &Url, cookie_header: &str, out: &Path) -> Result<()> {
     let client = reqwest::blocking::Client::builder()
         .build()
         .context("初始化 HTTP 客户端失败")?;
 
     let resp = client
         .get(url.clone())
+        .header(reqwest::header::COOKIE, cookie_header)
         .send()
         .with_context(|| format!("下载图片失败: {}", url))?;
     let status = resp.status();
     if !status.is_success() {
         return Err(anyhow!("下载失败: HTTP {}", status.as_u16()));
     }
+    if is_login_page_url(resp.url()) {
+        return Err(anyhow!("图片下载失败：认证已失效，跳转到了登录页"));
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type.to_ascii_lowercase().starts_with("image/") {
+        return Err(anyhow!(
+            "图片下载失败：响应不是图片（Content-Type: {}）",
+            if content_type.is_empty() {
+                "缺失"
+            } else {
+                content_type
+            }
+        ));
+    }
     let body = resp.bytes().context("读取图片响应体失败")?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent).context("创建图片下载目录失败")?;
+    }
     fs::write(out, &body).with_context(|| format!("写入图片失败: {}", out.display()))?;
     Ok(())
+}
+
+fn is_login_page_url(url: &Url) -> bool {
+    let path = url.path();
+    path.contains("/user-login-") || path.contains("/user-login.")
 }
 
 fn load_cookie_for_site(
@@ -1230,23 +1351,15 @@ fn load_cookie_for_site(
         .unwrap_or(CookieSource::Chrome);
     match source {
         CookieSource::Chrome => {
-            browser::load_zentao_cookie_from_chrome_macos(site_url, profile_override)
+            let profile = profile_override
+                .or_else(|| cfg.and_then(|config| config.chrome_profile.as_deref()));
+            browser::load_zentao_cookie_from_chrome_macos(site_url, profile)
         }
         CookieSource::File => {
-            let path = resolve_cookie_file_path(None)?;
+            let path = config::default_cookie_file_path()?;
             cookie_store::load_cookie_from_file(site_url, &path)
         }
     }
-}
-
-fn resolve_cookie_file_path(cli_path: Option<&str>) -> Result<PathBuf> {
-    if let Some(v) = cli_path {
-        let t = v.trim();
-        if !t.is_empty() {
-            return Ok(PathBuf::from(t));
-        }
-    }
-    config::default_cookie_file_path()
 }
 
 fn resolve_required(from_cli: Option<&str>, from_cfg: Option<&str>, field: &str) -> Result<String> {
@@ -1294,7 +1407,7 @@ fn parse_bug_input(raw: &str, configured_site: Option<&str>) -> Result<ParsedBug
         let site_url = resolve_required(None, configured_site, "site")?;
         return Ok(ParsedBugInput {
             id,
-            bug_url: format!("{}/bug-view-{}.html", site_url.trim_end_matches('/'), id),
+            bug_url: canonical_bug_url(&site_url, id),
             site_url,
         });
     }
@@ -1345,6 +1458,27 @@ fn derive_site_url_from_bug_url(url: &Url) -> Result<String> {
     base.set_query(None);
     base.set_fragment(None);
 
+    Ok(base.to_string().trim_end_matches('/').to_string())
+}
+
+fn derive_site_url_from_image_url(url: &Url) -> Result<String> {
+    let mut base = url.clone();
+    let mut segments: Vec<String> = base
+        .path_segments()
+        .map(|parts| parts.map(str::to_string).collect())
+        .unwrap_or_default();
+    if segments.pop().is_none() {
+        return Err(anyhow!("图片 URL 无效: 缺少文件路径"));
+    }
+
+    let new_path = if segments.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", segments.join("/"))
+    };
+    base.set_path(&new_path);
+    base.set_query(None);
+    base.set_fragment(None);
     Ok(base.to_string().trim_end_matches('/').to_string())
 }
 
@@ -1544,18 +1678,22 @@ fn print_cookie_presence(items: &[browser::BrowserCookieItem], name: &str) {
     let exists = items
         .iter()
         .any(|it| it.name == name && !it.value.is_empty());
+    println!("- {}: {}", name, cookie_presence_label(exists));
+}
+
+fn cookie_presence_label(exists: bool) -> String {
     if exists {
-        println!("- {}: \x1b[1;32m[OK]\x1b[0m", name);
+        style_success("[OK]")
     } else {
-        println!("- {}: \x1b[1;31m[MISSING]\x1b[0m", name);
+        style_error("[MISSING]")
     }
 }
 
 fn format_cookie_domains_line(domains: &[String]) -> String {
     if domains.is_empty() {
-        return "\x1b[1;31m(none) [MISSING]\x1b[0m".to_string();
+        return style_error("(none) [MISSING]");
     }
-    format!("{} \x1b[1;32m[OK]\x1b[0m", domains.join(", "))
+    format!("{} {}", domains.join(", "), style_success("[OK]"))
 }
 
 #[cfg(test)]

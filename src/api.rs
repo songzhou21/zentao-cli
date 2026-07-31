@@ -19,11 +19,11 @@ pub struct LoginResult {
 }
 
 impl ZentaoApi {
-    pub fn new(site_url: &str, _api_version: &str) -> Result<Self> {
-        Self::new_with_proxy(site_url, _api_version, None)
+    pub fn new(site_url: &str) -> Result<Self> {
+        Self::new_with_proxy(site_url, None)
     }
 
-    pub fn new_with_proxy(site_url: &str, _api_version: &str, proxy: Option<&str>) -> Result<Self> {
+    pub fn new_with_proxy(site_url: &str, proxy: Option<&str>) -> Result<Self> {
         let mut builder = Client::builder().cookie_store(true);
         if let Some(p) = proxy {
             let p = p.trim();

@@ -2758,6 +2758,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "tempfile",
+ "unicode-width",
  "url",
 ]
 

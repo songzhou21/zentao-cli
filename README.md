@@ -39,18 +39,22 @@ zentao bug list --resolved-by zhousong \
 
 # JSON 输出
 zentao bug view 57801 --json
-zentao bug list --json id,title,state,assignee
+zentao bug list --json=id,title,state,assignee
 
 # 查看详情：可传 Bug ID 或完整 URL
 zentao bug view 57801
 zentao bug view http://shendao.sharexm.cn/zentao/bug-view-57801.html
 zentao bug view 57801 -o ./bug-57801.md
-zentao bug view 57801 --json id,title,description,images,attachments
+zentao bug view 57801 --json=id,title,description,images,attachments
 ```
 
-`--json` 单独使用时输出所有字段；传入字段列表时只输出指定字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--module`、`-s/--state` 和 `-L/--limit`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。
+`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--module`、`-s/--state` 和 `-L/--limit`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。
 
 `bug view` 的 JSON 支持 `images` 字段，返回描述和历史记录中的图片 URL 数组。
+
+列表和详情 JSON 的 `url` 都是稳定的详情页地址：`<site>/bug-view-<id>.html`，不包含重定向产生的临时查询参数。
+
+列表 JSON 的 `openedDate`、`resolvedDate` 和 `deadline` 保留禅道列表原始文本；部分实例会省略年份，例如 `07-31 10:00`，不要将其当作完整 ISO 日期。
 
 ## 认证
 
@@ -64,6 +68,8 @@ zentao auth status --show-cookie-values
 ```
 
 `auth status` 默认隐藏 Cookie 值；仅在需要本地诊断时使用 `--show-cookie-values`。
+
+登录时显式传入 `--site` 会把该地址保存到配置中，成为后续命令的默认 Site；一次性切换站点时请留意这一持久化行为。
 
 ## 配置管理
 
@@ -80,6 +86,8 @@ zentao config set chrome-profile "/Users/you/Library/Application Support/Google/
 zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png
 zentao image download --url http://shendao.sharexm.cn/zentao/file-read-59561.png -o /tmp/bug57801
 ```
+
+图片下载会按当前认证配置携带 ZenTao Cookie，并且仅在最终响应不是登录页、`Content-Type` 为 `image/*` 时写入文件。
 
 ## 开发
 

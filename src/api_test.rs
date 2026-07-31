@@ -82,7 +82,7 @@ fn spawn_test_server(
 // 站点 URL 末尾斜杠应被规范化移除，避免后续拼接双斜杠。
 #[test]
 fn trim_site_url() {
-    let api = ZentaoApi::new("http://example.com/", "v1").unwrap();
+    let api = ZentaoApi::new("http://example.com/").unwrap();
     assert_eq!(api.site_url, "http://example.com");
 }
 
@@ -173,7 +173,7 @@ fn verify_cookie_table_cases() {
 
     for (_name, plans, want_err, want_url_suffix) in cases {
         let (site, seen_cookie, handle) = spawn_test_server(plans);
-        let api = ZentaoApi::new(&site, "v1").expect("api should build");
+        let api = ZentaoApi::new(&site).expect("api should build");
         let got = api.verify_cookie("zp=test");
 
         handle.join().expect("server should join");
@@ -622,7 +622,7 @@ fn fetch_bug_html_table_cases() {
 
     for (_name, plans, want_err, want_body_contains) in cases {
         let (site, seen_cookie, handle) = spawn_test_server(plans);
-        let api = ZentaoApi::new(&site, "v1").expect("api should build");
+        let api = ZentaoApi::new(&site).expect("api should build");
         let got = api.fetch_bug_html(&format!("{site}/bug-view-51214.html"), "zp=test");
 
         handle.join().expect("server should join");
@@ -669,7 +669,7 @@ fn search_bugs_follow_js_redirect_page() {
     ];
 
     let (site, seen_cookie, handle) = spawn_test_server(plans);
-    let api = ZentaoApi::new(&site, "v1").expect("api should build");
+    let api = ZentaoApi::new(&site).expect("api should build");
     let got = api.search_bugs("zp=test", 92, &[]);
 
     handle.join().expect("server should join");
