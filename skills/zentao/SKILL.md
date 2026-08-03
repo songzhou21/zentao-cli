@@ -5,84 +5,54 @@ description: 查询和查看禅道 Bug；适用于按标题、指派人、解决
 
 # Zentao Bug Workflow
 
-使用 `zentao` CLI 获取禅道 Bug。命令面只使用下列入口：
+用 `zentao` CLI 查禅道。**Agent 默认加 `--json`（或 `--json=fields`）读结构化输出**，不要依赖人类可读表格。
+
+入口：`bug list` / `bug view <ID|URL>` / `auth status` / `image download --url <URL>`。
+
+## 列表
 
 ```bash
-zentao bug list
-zentao bug view <ID|URL>
-zentao auth status
-zentao image download --url <URL>
+# 默认 active、最多 30 条；product 来自 --product / ZENTAO_PRODUCT / 配置，缺失则提示配置，禁止猜 ID
+zentao bug list --json=id,title,state,assignee,url
+
+# 筛选（按需组合）
+zentao bug list --title 会议 --json=id,title,state,assignee,url
+zentao bug list -a zhousong -s active -L 100 --json=id,title,state,assignee
+zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 --json
+zentao bug list --module 1099 --json=id,title,state
 ```
 
-## 搜索 Bug
+- `--title` 可重复最多 3 个，OR；不是展示开关。
+- 状态：`active`（默认）/ `resolved` / `closed` / `all`。
+- 搜索两组各 3 槽；默认 `active` 占一槽。条件顶满且不需状态时用 `--state all`。
+- `--json` 必须用等号形式指定字段：`--json=id,title`（裸 `--json` = 全部字段）。
+- 列表字段：`id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignee` `resolvedDate` `resolution` `deadline` `url`。
+- 日期字段保留禅道原文，可能无年份；勿补全成 ISO。
 
-按用户意图选择真实、已验证的禅道筛选条件：
+## 详情
 
 ```bash
-# 标题包含匹配；重复 --title 最多 3 个，按 OR
-zentao bug list --title 会议
-
-# 指派人、状态和数量
-zentao bug list -a zhousong -s active -L 100
-
-# 已解决 Bug 的解决人和日期范围
-zentao bug list --resolved-by zhousong \
-  --resolved-from 2026-07-01 --resolved-to 2026-07-31
-
-# 所属模块
-zentao bug list --module 1099
+zentao bug view 57801 --json=id,title,description,history,images,attachments,url
+zentao bug view http://example/zentao/bug-view-57801.html --json
 ```
 
-`bug list` 默认查询 `active` 状态、最多返回 30 条。产品范围来自 `--product`、`ZENTAO_PRODUCT` 或配置；缺失时先提示用户配置产品，不要猜测产品 ID。
+- ID 需已配置 site；URL 用 URL 自身 site。
+- 详情字段：`id` `title` `description` `history` `images` `attachments` `url`。
+- `url` 稳定为 `<site>/bug-view-<id>.html`。
 
-禅道搜索有两组、各三个条件槽位。默认 `active` 状态也会占用一个槽位；筛选条件触及上限且不需状态筛选时，使用 `--state all` 释放该槽位。
-
-用户明确需要 JSON、脚本消费或字段筛选时，使用字段化 JSON：
-
-```bash
-zentao bug view 57801 --json
-zentao bug list --json=id,title,state,assignee
-```
-
-`--json` 单独使用时输出全部字段；传字段列表时必须使用等号形式，例如 `--json=id,title`，以免吞掉 Bug ID 等位置参数。
-
-可用列表字段：`id`、`title`、`state`、`severity`、`priority`、`confirmed`、`openedBy`、`openedDate`、`assignee`、`resolvedDate`、`resolution`、`deadline`、`url`。
-
-`openedDate`、`resolvedDate` 和 `deadline` 保留禅道列表的原始日期文本，可能省略年份；不要把它们当作完整 ISO 日期或自行补全年份。
-
-## 查看详情
-
-`bug view` 接受 Bug ID 或完整详情 URL：
-
-```bash
-zentao bug view 57801
-zentao bug view http://shendao.sharexm.cn/zentao/bug-view-57801.html
-zentao bug view 57801 --json=id,title,description,images,attachments
-```
-
-传 URL 时，使用 URL 自己的站点；传 ID 时需要已配置的 Site。JSON 的 `images` 字段列出描述与历史记录中的图片 URL。默认输出 Markdown，包含 `# Bug #<id> <标题>`、`## 描述`、`## 历史记录` 和 `## 附件`。
-
-## 排查 Bug
-
-只有用户的目标是排查、修复或分析 Bug 时，才需要下载并查看描述中的图片。若附件包含 ZIP 日志，也下载到 `/tmp` 的独立目录后解压分析。普通查询、周报和提交说明不强制下载媒体。
-
-图片下载使用本地 shell：
+## 排查（仅当用户要分析/修 Bug）
 
 ```bash
 zentao image download --url "<image-url>" -o "/tmp/bug-<id>"
 ```
 
-下载会使用当前 ZenTao Cookie；登录页或非图片响应会失败，不要把失败响应当作图片处理。
-
-分析结论应结合描述、截图和日志时序；不要只根据标题下结论。
+用当前 Cookie；非 `image/*` 或登录页则失败。ZIP 日志可下到 `/tmp` 再解压。结合描述/图/日志，勿只看标题。
 
 ## 认证失败
-
-出现 Cookie 失效或站点缺失时，先运行：
 
 ```bash
 zentao auth status
 zentao config list
 ```
 
-默认 Cookie 来源是 Chrome；`auth login` 成功后会改用本地 `file` Cookie。
+默认 Chrome Cookie；`auth login` 成功后改用 `file`。

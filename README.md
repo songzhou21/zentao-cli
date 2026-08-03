@@ -37,6 +37,9 @@ zentao bug list --title 会议 -a zhousong -s active -L 100
 zentao bug list --resolved-by zhousong \
   --resolved-from 2026-07-01 --resolved-to 2026-07-31
 
+# 表格默认截断标题；需要完整标题时加 --full-title（不影响 --title 搜索条件）
+zentao bug list --title 会议优化5.1期 -s all --full-title
+
 # JSON 输出
 zentao bug view 57801 --json
 zentao bug list --json=id,title,state,assignee
@@ -48,7 +51,9 @@ zentao bug view 57801 -o ./bug-57801.md
 zentao bug view 57801 --json=id,title,description,images,attachments
 ```
 
-`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--module`、`-s/--state` 和 `-L/--limit`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。
+`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--module`、`-s/--state`、`-L/--limit` 和 `--full-title`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。表格默认按显示宽度截断 TITLE；`--full-title` 仅影响人类可读表格，展示完整标题，不影响搜索条件；JSON 路径本身已是完整字段，可与 `--full-title` 并用（静默忽略）。
+
+在终端（TTY，如 Kitty）中，`bug list` 表格的 TITLE 默认可点击：使用 OSC 8 超链接，目标地址与 JSON `url` 相同（`<site>/bug-view-<id>.html`）。标题外观不变（无额外下划线或变色）；管道/重定向时不注入控制序列。
 
 `bug view` 的 JSON 支持 `images` 字段，返回描述和历史记录中的图片 URL 数组。
 

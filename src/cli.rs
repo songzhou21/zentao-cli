@@ -185,6 +185,10 @@ struct BugListArgs {
     )]
     limit: u32,
 
+    /// 表格输出时展示完整标题（默认按显示宽度截断）；不影响搜索条件或 JSON
+    #[arg(long, default_value_t = false)]
+    full_title: bool,
+
     /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignee,resolvedDate,resolution,deadline,url
     #[arg(
         long,
@@ -636,7 +640,10 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
     } else {
-        print!("{}", render_bug_list_table(&result));
+        print!(
+            "{}",
+            render_bug_list_table(&result, args.full_title, &site_url, hyperlinks_enabled())
+        );
     }
     Ok(())
 }
@@ -921,7 +928,12 @@ fn print_json(value: &Value) -> Result<()> {
     Ok(())
 }
 
-fn render_bug_list_table(result: &search::SearchResult) -> String {
+fn render_bug_list_table(
+    result: &search::SearchResult,
+    full_title: bool,
+    site: &str,
+    hyperlinks: bool,
+) -> String {
     if result.bugs.is_empty() {
         return "没有找到 Bug\n".to_string();
     }
@@ -936,11 +948,19 @@ fn render_bug_list_table(result: &search::SearchResult) -> String {
     for bug in &result.bugs {
         let state = canonical_state(&bug.status);
         let state = colorize_state(&pad_to_display_width(state, BUG_LIST_STATE_WIDTH), state);
+        let mut title = if full_title {
+            normalize_table_cell(&bug.title)
+        } else {
+            truncate_for_table(&bug.title, BUG_LIST_TITLE_WIDTH)
+        };
+        if hyperlinks {
+            title = osc8_hyperlink(&canonical_bug_url(site, bug.id), &title);
+        }
         out.push_str(&format!(
             "{} {} {} {} {}\n",
             pad_to_display_width(&bug.id.to_string(), BUG_LIST_ID_WIDTH),
             state,
-            truncate_for_table(&bug.title, BUG_LIST_TITLE_WIDTH),
+            title,
             truncate_for_table(&bug.assigned_to, BUG_LIST_ASSIGNEE_WIDTH),
             bug.opened_date.trim(),
         ));
@@ -951,6 +971,15 @@ fn render_bug_list_table(result: &search::SearchResult) -> String {
         }
     }
     out
+}
+
+fn hyperlinks_enabled() -> bool {
+    io::stdout().is_terminal()
+}
+
+/// Kitty / modern terminals: OSC 8 hyperlink around visible text.
+fn osc8_hyperlink(url: &str, text: &str) -> String {
+    format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
 }
 
 fn ansi_enabled() -> bool {
@@ -995,8 +1024,12 @@ fn current_profile_marker(is_current: bool) -> String {
     }
 }
 
+fn normalize_table_cell(value: &str) -> String {
+    value.trim().replace(['\n', '\r'], " ")
+}
+
 fn truncate_for_table(value: &str, width: usize) -> String {
-    let value = value.trim().replace(['\n', '\r'], " ");
+    let value = normalize_table_cell(value);
     if UnicodeWidthStr::width(value.as_str()) <= width {
         return pad_to_display_width(&value, width);
     }

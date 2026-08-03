@@ -112,7 +112,19 @@ fn global_options_and_bug_list_parse() {
             assert!(matches!(args.state, BugState::All));
             assert_eq!(args.limit, 50);
             assert_eq!(args.title, vec!["会议"]);
+            assert!(!args.full_title);
         }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn bug_list_parses_full_title_flag() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--full-title"]).expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::List(args),
+        }) => assert!(args.full_title),
         _ => panic!("unexpected command"),
     }
 }
@@ -309,7 +321,7 @@ fn result_limit_applies_to_table_and_json() {
 
     apply_result_limit(&mut result, 1);
     assert_eq!(result.bugs.len(), 1);
-    let table = render_bug_list_table(&result);
+    let table = render_bug_list_table(&result, false, "http://example.com", false);
     assert!(table.contains("第一条"));
     assert!(!table.contains("第二条"));
     let json = render_list_json(&result, "http://example.com", "id,title").expect("json");
@@ -332,10 +344,15 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         resolution: String::new(),
         deadline: String::new(),
     };
-    let table = render_bug_list_table(&search::SearchResult {
-        bugs: vec![bug],
-        total: None,
-    });
+    let table = render_bug_list_table(
+        &search::SearchResult {
+            bugs: vec![bug],
+            total: None,
+        },
+        false,
+        "http://example.com",
+        false,
+    );
     let row = table.lines().nth(1).expect("row");
     let assignee_byte = row.find("alice").expect("assignee");
     assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 83);
@@ -343,6 +360,79 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
     let five_columns = truncate_for_table("中文标题", 5);
     assert_eq!(UnicodeWidthStr::width(six_columns.as_str()), 6);
     assert_eq!(UnicodeWidthStr::width(five_columns.as_str()), 5);
+}
+
+#[test]
+fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
+    let long_title = "【会议优化5.1期】H5和APP登录同一个账号在同一个直播间会议中展示人数不一致";
+    let long_assignee = "特别长的指派人名";
+    let bug = search::BugRow {
+        id: 57879,
+        severity: String::new(),
+        pri: String::new(),
+        confirmed: String::new(),
+        title: format!("{long_title}\n换行"),
+        status: "resolved".to_string(),
+        opened_by: String::new(),
+        opened_date: "07-31 16:36".to_string(),
+        assigned_to: long_assignee.to_string(),
+        resolved_date: String::new(),
+        resolution: String::new(),
+        deadline: String::new(),
+    };
+    let result = search::SearchResult {
+        bugs: vec![bug],
+        total: None,
+    };
+
+    let truncated = render_bug_list_table(&result, false, "http://example.com", false);
+    let truncated_row = truncated.lines().nth(1).expect("row");
+    assert!(truncated_row.contains('…'));
+    assert!(!truncated_row.contains(long_title));
+
+    let full = render_bug_list_table(&result, true, "http://example.com", false);
+    assert_eq!(
+        full.lines().count(),
+        2,
+        "embedded newlines must not create extra rows"
+    );
+    let full_row = full.lines().nth(1).expect("row");
+    assert!(full_row.contains(long_title));
+    assert!(full_row.contains("换行"));
+    assert!(!full_row.contains(long_assignee));
+    assert!(full_row.contains('…'));
+}
+
+#[test]
+fn bug_table_title_uses_osc8_hyperlink_when_enabled() {
+    let bug = search::BugRow {
+        id: 57879,
+        severity: String::new(),
+        pri: String::new(),
+        confirmed: String::new(),
+        title: "会议优化标题".to_string(),
+        status: "active".to_string(),
+        opened_by: String::new(),
+        opened_date: "07-31 16:36".to_string(),
+        assigned_to: "alice".to_string(),
+        resolved_date: String::new(),
+        resolution: String::new(),
+        deadline: String::new(),
+    };
+    let result = search::SearchResult {
+        bugs: vec![bug],
+        total: None,
+    };
+    let site = "http://example.com/zentao";
+    let linked = render_bug_list_table(&result, false, site, true);
+    let expected_url = "http://example.com/zentao/bug-view-57879.html";
+    assert!(linked.contains(&format!("\x1b]8;;{expected_url}\x1b\\")));
+    assert!(linked.contains("会议优化标题"));
+    assert!(linked.contains("\x1b]8;;\x1b\\"));
+
+    let plain = render_bug_list_table(&result, false, site, false);
+    assert!(!plain.contains("\x1b]8;;"));
+    assert!(plain.contains("会议优化标题"));
 }
 
 #[test]
