@@ -189,6 +189,10 @@ struct BugListArgs {
     #[arg(long, default_value_t = false)]
     full_title: bool,
 
+    /// 纯文本表格：关闭超链接、颜色等交互装饰（仍可与 --full-title 并用）
+    #[arg(long, default_value_t = false)]
+    plain: bool,
+
     /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignee,resolvedDate,resolution,deadline,url
     #[arg(
         long,
@@ -640,9 +644,16 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
     } else {
+        let plain = args.plain;
         print!(
             "{}",
-            render_bug_list_table(&result, args.full_title, &site_url, hyperlinks_enabled())
+            render_bug_list_table(
+                &result,
+                args.full_title,
+                &site_url,
+                !plain && hyperlinks_enabled(),
+                !plain,
+            )
         );
     }
     Ok(())
@@ -933,6 +944,7 @@ fn render_bug_list_table(
     full_title: bool,
     site: &str,
     hyperlinks: bool,
+    styled: bool,
 ) -> String {
     if result.bugs.is_empty() {
         return "没有找到 Bug\n".to_string();
@@ -944,10 +956,22 @@ fn render_bug_list_table(
         pad_to_display_width("TITLE", BUG_LIST_TITLE_WIDTH),
         pad_to_display_width("ASSIGNEE", BUG_LIST_ASSIGNEE_WIDTH),
     );
-    let mut out = format!("{}\n", style_header(&header));
+    let mut out = format!(
+        "{}\n",
+        if styled {
+            style_header(&header)
+        } else {
+            header
+        }
+    );
     for bug in &result.bugs {
         let state = canonical_state(&bug.status);
-        let state = colorize_state(&pad_to_display_width(state, BUG_LIST_STATE_WIDTH), state);
+        let state_cell = pad_to_display_width(state, BUG_LIST_STATE_WIDTH);
+        let state = if styled {
+            colorize_state(&state_cell, state)
+        } else {
+            state_cell
+        };
         let mut title = if full_title {
             normalize_table_cell(&bug.title)
         } else {

@@ -113,6 +113,7 @@ fn global_options_and_bug_list_parse() {
             assert_eq!(args.limit, 50);
             assert_eq!(args.title, vec!["会议"]);
             assert!(!args.full_title);
+            assert!(!args.plain);
         }
         _ => panic!("unexpected command"),
     }
@@ -125,6 +126,17 @@ fn bug_list_parses_full_title_flag() {
         Commands::Bug(BugArgs {
             command: BugSubCommands::List(args),
         }) => assert!(args.full_title),
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn bug_list_parses_plain_flag() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--plain"]).expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::List(args),
+        }) => assert!(args.plain),
         _ => panic!("unexpected command"),
     }
 }
@@ -321,7 +333,7 @@ fn result_limit_applies_to_table_and_json() {
 
     apply_result_limit(&mut result, 1);
     assert_eq!(result.bugs.len(), 1);
-    let table = render_bug_list_table(&result, false, "http://example.com", false);
+    let table = render_bug_list_table(&result, false, "http://example.com", false, false);
     assert!(table.contains("第一条"));
     assert!(!table.contains("第二条"));
     let json = render_list_json(&result, "http://example.com", "id,title").expect("json");
@@ -351,6 +363,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         },
         false,
         "http://example.com",
+        false,
         false,
     );
     let row = table.lines().nth(1).expect("row");
@@ -385,12 +398,12 @@ fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
         total: None,
     };
 
-    let truncated = render_bug_list_table(&result, false, "http://example.com", false);
+    let truncated = render_bug_list_table(&result, false, "http://example.com", false, false);
     let truncated_row = truncated.lines().nth(1).expect("row");
     assert!(truncated_row.contains('…'));
     assert!(!truncated_row.contains(long_title));
 
-    let full = render_bug_list_table(&result, true, "http://example.com", false);
+    let full = render_bug_list_table(&result, true, "http://example.com", false, false);
     assert_eq!(
         full.lines().count(),
         2,
@@ -424,14 +437,15 @@ fn bug_table_title_uses_osc8_hyperlink_when_enabled() {
         total: None,
     };
     let site = "http://example.com/zentao";
-    let linked = render_bug_list_table(&result, false, site, true);
+    let linked = render_bug_list_table(&result, false, site, true, true);
     let expected_url = "http://example.com/zentao/bug-view-57879.html";
     assert!(linked.contains(&format!("\x1b]8;;{expected_url}\x1b\\")));
     assert!(linked.contains("会议优化标题"));
     assert!(linked.contains("\x1b]8;;\x1b\\"));
 
-    let plain = render_bug_list_table(&result, false, site, false);
+    let plain = render_bug_list_table(&result, false, site, false, false);
     assert!(!plain.contains("\x1b]8;;"));
+    assert!(!plain.contains('\x1b'));
     assert!(plain.contains("会议优化标题"));
 }
 
