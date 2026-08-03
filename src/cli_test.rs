@@ -1,4 +1,5 @@
 use super::*;
+use chrono::{NaiveDate, Weekday};
 use clap::Parser;
 use reqwest::Url;
 use serde_json::json;
@@ -171,8 +172,8 @@ fn default_active_state_slot_limit_error_suggests_state_all() {
         panic!("unexpected command");
     };
 
-    let error =
-        validate_search_group_limits(&args).expect_err("default active exceeds group limit");
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("default active exceeds group limit");
     assert!(error.to_string().contains("--state all"));
 
     let cli = Cli::try_parse_from([
@@ -199,7 +200,372 @@ fn default_active_state_slot_limit_error_suggests_state_all() {
     else {
         panic!("unexpected command");
     };
-    validate_search_group_limits(&args).expect("state all releases the slot");
+    validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect("state all releases the slot");
+}
+
+#[test]
+fn bug_stats_defaults_to_state_all_and_limit_1000() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "stats"]).expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::Stats(args),
+        }) => {
+            assert!(matches!(args.state, BugState::All));
+            assert_eq!(args.limit, 1000);
+            assert!(!args.plain);
+            assert!(args.json.is_none());
+            assert!(!args.week);
+            assert!(!args.month);
+            assert!(!args.day);
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn reporting_week_bounds_monday_through_sunday() {
+    // 2026-08-03 is Monday → week is 2026-08-03 (Mon) .. 2026-08-09 (Sun)
+    let monday = NaiveDate::from_ymd_opt(2026, 8, 3).unwrap();
+    assert_eq!(
+        reporting_week_bounds(monday),
+        (
+            NaiveDate::from_ymd_opt(2026, 8, 3).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 8, 9).unwrap()
+        )
+    );
+    // Wednesday stays in the same Mon–Sun week
+    let wednesday = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+    assert_eq!(
+        reporting_week_bounds(wednesday),
+        (
+            NaiveDate::from_ymd_opt(2026, 8, 3).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 8, 9).unwrap()
+        )
+    );
+    // Sunday is the end of that week
+    let sunday = NaiveDate::from_ymd_opt(2026, 8, 9).unwrap();
+    assert_eq!(
+        reporting_week_bounds(sunday),
+        (
+            NaiveDate::from_ymd_opt(2026, 8, 3).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 8, 9).unwrap()
+        )
+    );
+}
+
+#[test]
+fn calendar_month_and_day_bounds() {
+    let d = NaiveDate::from_ymd_opt(2026, 8, 3).unwrap();
+    assert_eq!(
+        calendar_month_bounds(d),
+        (
+            NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 8, 31).unwrap()
+        )
+    );
+    let jan = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
+    assert_eq!(
+        calendar_month_bounds(jan),
+        (
+            NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 1, 31).unwrap()
+        )
+    );
+}
+
+#[test]
+fn resolve_resolved_date_range_presets() {
+    let today = NaiveDate::from_ymd_opt(2026, 8, 3).unwrap();
+    let (from, to) = resolve_resolved_date_range(true, false, false, None, None, today);
+    assert_eq!(from.as_deref(), Some("2026-08-03"));
+    assert_eq!(to.as_deref(), Some("2026-08-09"));
+
+    let (from, to) = resolve_resolved_date_range(false, true, false, None, None, today);
+    assert_eq!(from.as_deref(), Some("2026-08-01"));
+    assert_eq!(to.as_deref(), Some("2026-08-31"));
+
+    let (from, to) = resolve_resolved_date_range(false, false, true, None, None, today);
+    assert_eq!(from.as_deref(), Some("2026-08-03"));
+    assert_eq!(to.as_deref(), Some("2026-08-03"));
+
+    let (from, to) = resolve_resolved_date_range(
+        false,
+        false,
+        false,
+        Some("2026-01-01".into()),
+        Some("2026-01-31".into()),
+        today,
+    );
+    assert_eq!(from.as_deref(), Some("2026-01-01"));
+    assert_eq!(to.as_deref(), Some("2026-01-31"));
+
+    // Explicit times are stripped to calendar dates for query/display consistency.
+    let (from, to) = resolve_resolved_date_range(
+        false,
+        false,
+        false,
+        Some("2026-01-01 08:30:00".into()),
+        Some("2026-01-31 18:00:00".into()),
+        today,
+    );
+    assert_eq!(from.as_deref(), Some("2026-01-01"));
+    assert_eq!(to.as_deref(), Some("2026-01-31"));
+}
+
+#[test]
+fn date_presets_conflict_with_each_other_and_resolved_range() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "stats", "--week", "--month"]).is_err());
+    assert!(Cli::try_parse_from(["zentao", "bug", "list", "--day", "--week"]).is_err());
+    assert!(Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "stats",
+        "--week",
+        "--resolved-from",
+        "2026-01-01",
+    ])
+    .is_err());
+}
+
+#[test]
+fn bug_stats_week_expands_into_search_query() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "stats", "--week"]).expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::Stats(args),
+    }) = cli.command
+    else {
+        panic!("unexpected");
+    };
+    assert!(args.week);
+    let query = BugSearchQuery::from(&args);
+    assert!(query.resolved_from.is_some());
+    assert!(query.resolved_to.is_some());
+    // from is Monday, to is Sunday (calendar dates only)
+    let from =
+        NaiveDate::parse_from_str(query.resolved_from.as_deref().unwrap(), "%Y-%m-%d").unwrap();
+    let to = NaiveDate::parse_from_str(query.resolved_to.as_deref().unwrap(), "%Y-%m-%d").unwrap();
+    assert_eq!(from.weekday(), Weekday::Mon);
+    assert_eq!(to.weekday(), Weekday::Sun);
+    assert_eq!((to - from).num_days(), 6);
+}
+
+#[test]
+fn bug_stats_rejects_full_title() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "stats", "--full-title"]).is_err());
+}
+
+#[test]
+fn bug_stats_parses_shared_filters_and_plain() {
+    let cli = Cli::try_parse_from([
+        "zentao", "bug", "stats", "--title", "会议", "-a", "zhousong", "--module", "1099", "-s",
+        "active", "-L", "50", "--plain",
+    ])
+    .expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::Stats(args),
+        }) => {
+            assert_eq!(args.title, vec!["会议"]);
+            assert_eq!(args.assignee.as_deref(), Some("zhousong"));
+            assert_eq!(args.module.as_deref(), Some("1099"));
+            assert!(matches!(args.state, BugState::Active));
+            assert_eq!(args.limit, 50);
+            assert!(args.plain);
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+fn sample_bug_row(id: u64, status: &str, assigned_to: &str) -> search::BugRow {
+    search::BugRow {
+        id,
+        severity: String::new(),
+        pri: String::new(),
+        confirmed: String::new(),
+        title: format!("bug-{id}"),
+        status: status.to_string(),
+        opened_by: String::new(),
+        opened_date: String::new(),
+        assigned_to: assigned_to.to_string(),
+        resolved_date: String::new(),
+        resolution: String::new(),
+        deadline: String::new(),
+    }
+}
+
+#[test]
+fn aggregate_stats_groups_sorts_by_active_then_resolved() {
+    let bugs = vec![
+        sample_bug_row(1, "激活", "bob"),
+        sample_bug_row(2, "active", "alice"),
+        sample_bug_row(3, "已解决", "alice"),
+        sample_bug_row(4, "已关闭", "alice"),
+        sample_bug_row(5, "closed", "Closed"),
+        sample_bug_row(6, "激活", ""),
+        sample_bug_row(7, "resolved", "--"),
+        // charlie: 0 active, 3 resolved — below anyone with active
+        sample_bug_row(8, "resolved", "charlie"),
+        sample_bug_row(9, "resolved", "charlie"),
+        sample_bug_row(10, "resolved", "charlie"),
+    ];
+    let stats =
+        aggregate_stats_by_assignee(&bugs, 100, "2026-08-03 12:00:00".to_string(), None, None);
+    assert_eq!(stats.sample_size, 10);
+    assert!(!stats.incomplete);
+    assert_eq!(stats.rows.len(), 5);
+
+    // Sort: active desc, then resolved desc, then name
+    // alice/unassigned: active=1 resolved=1 (name: 未指派 before alice); bob: 1/0; charlie: 0/3
+    assert_eq!(stats.rows[0].assignee, BUG_STATS_UNASSIGNED);
+    assert_eq!(stats.rows[0].active, 1);
+    assert_eq!(stats.rows[0].resolved, 1);
+
+    assert_eq!(stats.rows[1].assignee, "alice");
+    assert_eq!(stats.rows[1].active, 1);
+    assert_eq!(stats.rows[1].resolved, 1);
+
+    assert_eq!(stats.rows[2].assignee, "bob");
+    assert_eq!(stats.rows[2].active, 1);
+    assert_eq!(stats.rows[2].resolved, 0);
+    assert_eq!(stats.rows[2].total, 1);
+
+    assert_eq!(stats.rows[3].assignee, "charlie");
+    assert_eq!(stats.rows[3].active, 0);
+    assert_eq!(stats.rows[3].resolved, 3);
+
+    assert_eq!(stats.rows[4].assignee, BUG_STATS_CLOSED_BUCKET);
+    assert_eq!(stats.rows[4].closed, 2);
+
+    assert_eq!(stats.total.active, 3);
+    assert_eq!(stats.total.resolved, 5);
+    assert_eq!(stats.total.closed, 2);
+    assert_eq!(stats.total.total, 10);
+}
+
+#[test]
+fn aggregate_stats_marks_incomplete_when_sample_hits_limit() {
+    let bugs = vec![
+        sample_bug_row(1, "active", "alice"),
+        sample_bug_row(2, "closed", "alice"),
+    ];
+    let stats =
+        aggregate_stats_by_assignee(&bugs, 2, "2026-08-03 12:00:00".to_string(), None, None);
+    assert!(stats.incomplete);
+    assert_eq!(stats.sample_size, 2);
+    assert_eq!(stats.limit, 2);
+}
+
+#[test]
+fn render_stats_json_shape_and_field_subset() {
+    let stats = aggregate_stats_by_assignee(
+        &[
+            sample_bug_row(1, "active", "alice"),
+            sample_bug_row(2, "closed", "Closed"),
+        ],
+        10,
+        "2026-08-03 12:00:00".to_string(),
+        Some("2026-08-03".into()),
+        Some("2026-08-09".into()),
+    );
+    let full = render_stats_json(&stats, "").expect("json");
+    assert_eq!(full["groupBy"], "assignee");
+    assert_eq!(full["sampleSize"], 2);
+    assert_eq!(full["limit"], 10);
+    assert_eq!(full["incomplete"], false);
+    assert_eq!(full["fetchedAt"], "2026-08-03 12:00:00");
+    assert_eq!(full["resolvedFrom"], "2026-08-03");
+    assert_eq!(full["resolvedTo"], "2026-08-09");
+    assert!(full.get("teamOpen").is_none());
+    assert_eq!(full["rows"][0]["assignee"], "alice");
+    assert_eq!(full["rows"][0]["active"], 1);
+    assert_eq!(full["rows"][0]["closed"], 0);
+    assert_eq!(full["rows"][0]["total"], 1);
+    assert!(full["rows"][0].get("openShare").is_none());
+    assert_eq!(full["rows"][1]["assignee"], BUG_STATS_CLOSED_BUCKET);
+    assert_eq!(full["rows"][1]["closed"], 1);
+    assert!(full["total"].get("assignee").is_none());
+    assert_eq!(full["total"]["active"], 1);
+    assert_eq!(full["total"]["closed"], 1);
+
+    let subset = render_stats_json(&stats, "assignee,active").expect("subset");
+    assert_eq!(
+        subset["rows"][0],
+        json!({
+            "assignee": "alice",
+            "active": 1
+        })
+    );
+    assert_eq!(subset["total"], json!({ "active": 1 }));
+    assert_eq!(subset["fetchedAt"], "2026-08-03 12:00:00");
+}
+
+#[test]
+fn render_stats_table_has_no_duplicate_incomplete_footer() {
+    let stats = aggregate_stats_by_assignee(
+        &[
+            sample_bug_row(1, "active", "alice"),
+            sample_bug_row(2, "closed", "bob"),
+        ],
+        2,
+        "2026-08-03 12:00:00".to_string(),
+        Some("2026-08-03".into()),
+        Some("2026-08-09".into()),
+    );
+    let table = render_bug_stats_table(&stats, false);
+    assert!(table.contains("指派给"));
+    assert!(table.contains("待验证"));
+    assert!(table.contains("合计"));
+    assert!(!table.contains("未关占比"));
+    assert!(!table.contains('%'));
+    assert!(table.contains("alice"));
+    assert!(table.contains(BUG_STATS_CLOSED_BUCKET));
+    assert!(!table
+        .lines()
+        .any(|line| line.contains("bob") && !line.contains(BUG_STATS_TOTAL_LABEL)));
+    assert!(table.contains(BUG_STATS_TOTAL_LABEL));
+    // resolved range + fetched time are own lines under the table
+    assert!(table.contains("\n解决日期: 2026-08-03 ~ 2026-08-09\n"));
+    assert!(table.contains("\n更新时间: 2026-08-03 12:00:00\n"));
+    let lines: Vec<&str> = table.lines().collect();
+    assert_eq!(*lines.last().unwrap(), "更新时间: 2026-08-03 12:00:00");
+    assert!(lines.contains(&"解决日期: 2026-08-03 ~ 2026-08-09"));
+    assert!(!table.contains('\x1b'), "plain/unstyled table has no ANSI");
+    assert_eq!(
+        format_resolved_date_range_line(Some("2026-08-03 00:00:00"), Some("2026-08-09 23:59:59"))
+            .as_deref(),
+        Some("解决日期: 2026-08-03 ~ 2026-08-09")
+    );
+    assert!(format_resolved_date_range_line(None, None).is_none());
+    // incomplete is stderr-only; table must not repeat the sample footer
+    assert!(!table.contains("sample:"));
+    assert!(!table.contains("incomplete"));
+    assert_eq!(
+        format_stats_incomplete_warning(&stats),
+        "warning: 样本已达 limit=2（聚合 2 条），可能不全；请提高 -L 或收窄筛选"
+    );
+
+    let colored = render_bug_stats_table(&stats, true);
+    assert!(colored.contains("\x1b[36m"), "person names use cyan");
+    assert!(colored.contains("\x1b[37m"), "counts use normal white");
+    assert!(colored.contains("\x1b[1;36m"), "TOTAL name is bold cyan");
+    assert!(
+        colored.contains("\x1b[1;37m"),
+        "TOTAL counts are bold white"
+    );
+    assert!(
+        colored.contains("\x1b[34m"),
+        "resolved date meta uses muted blue"
+    );
+    assert!(
+        colored.contains("\x1b[90m"),
+        "system rows (unassigned/closed) still dim"
+    );
+    assert!(
+        colored.contains("\x1b[37m更新时间:"),
+        "fetched-at uses readable white, not dim gray"
+    );
+    assert!(!colored.contains("\x1b[33m"), "avoid flashy yellow counts");
 }
 
 #[test]

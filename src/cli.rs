@@ -6,7 +6,7 @@ use crate::config::CookieSource;
 use crate::cookie_store;
 use crate::search;
 use anyhow::{anyhow, Context, Result};
-use chrono::{TimeZone, Utc};
+use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use regex::Regex;
 use reqwest::Url;
@@ -23,6 +23,13 @@ const BUG_LIST_ID_WIDTH: usize = 6;
 const BUG_LIST_STATE_WIDTH: usize = 9;
 const BUG_LIST_TITLE_WIDTH: usize = 65;
 const BUG_LIST_ASSIGNEE_WIDTH: usize = 10;
+const BUG_STATS_ASSIGNEE_WIDTH: usize = 16;
+const BUG_STATS_COUNT_WIDTH: usize = 8;
+const BUG_STATS_UNASSIGNED: &str = "(未指派)";
+/// Closed bugs are not attributed to the list assignee (often the literal "Closed").
+const BUG_STATS_CLOSED_BUCKET: &str = "(已关闭)";
+const BUG_STATS_TOTAL_LABEL: &str = "合计";
+const BUG_STATS_DEFAULT_LIMIT: u32 = 1000;
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao", version, about = "在终端管理禅道 Bug")]
@@ -98,6 +105,7 @@ struct BugArgs {
 #[derive(Debug, Subcommand)]
 enum BugSubCommands {
     List(BugListArgs),
+    Stats(BugStatsArgs),
     View(BugViewArgs),
 }
 
@@ -163,6 +171,18 @@ struct BugListArgs {
     #[arg(long, value_name = "DATE")]
     resolved_to: Option<String>,
 
+    /// 解决日期快捷：本周一～本周日（含），与 --month/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["month", "day", "resolved_from", "resolved_to"])]
+    week: bool,
+
+    /// 解决日期快捷：本月 1 日～月末（含），与 --week/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "day", "resolved_from", "resolved_to"])]
+    month: bool,
+
+    /// 解决日期快捷：今天，与 --week/--month/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "month", "resolved_from", "resolved_to"])]
+    day: bool,
+
     /// 所属模块 ID，例如 1099
     #[arg(long, value_name = "MODULE_ID")]
     module: Option<String>,
@@ -204,12 +224,225 @@ struct BugListArgs {
     json: Option<String>,
 }
 
+#[derive(Debug, Args)]
+struct BugStatsArgs {
+    /// 标题关键词（包含匹配）。可重复传入，多个值按 OR 处理，例如 --title A --title B
+    #[arg(long, value_name = "KEYWORD")]
+    title: Vec<String>,
+
+    /// 指派给（用户名），例如 zhousong
+    #[arg(short = 'a', long, value_name = "USER")]
+    assignee: Option<String>,
+
+    /// 解决者（用户名），例如 zhousong
+    #[arg(long, value_name = "USER")]
+    resolved_by: Option<String>,
+
+    /// 解决日期起始（含），格式 YYYY-MM-DD
+    #[arg(long, value_name = "DATE")]
+    resolved_from: Option<String>,
+
+    /// 解决日期截止（含），格式 YYYY-MM-DD
+    #[arg(long, value_name = "DATE")]
+    resolved_to: Option<String>,
+
+    /// 解决日期快捷：本周一～本周日（含），与 --month/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["month", "day", "resolved_from", "resolved_to"])]
+    week: bool,
+
+    /// 解决日期快捷：本月 1 日～月末（含），与 --week/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "day", "resolved_from", "resolved_to"])]
+    month: bool,
+
+    /// 解决日期快捷：今天，与 --week/--month/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "month", "resolved_from", "resolved_to"])]
+    day: bool,
+
+    /// 所属模块 ID，例如 1099
+    #[arg(long, value_name = "MODULE_ID")]
+    module: Option<String>,
+
+    /// Bug 状态；默认 all（按指派人做全状态剖面）
+    #[arg(short = 's', long, value_enum, default_value_t = BugState::All)]
+    state: BugState,
+
+    /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
+    #[arg(long, env = "ZENTAO_PRODUCT", value_name = "ID")]
+    product: Option<u64>,
+
+    /// 最多聚合的 Bug 数量（样本上限，不保证全集）
+    #[arg(
+        short = 'L',
+        long,
+        default_value_t = BUG_STATS_DEFAULT_LIMIT,
+        value_parser = clap::value_parser!(u32).range(1..),
+        value_name = "N"
+    )]
+    limit: u32,
+
+    /// 纯文本表格：关闭表头颜色等交互装饰
+    #[arg(long, default_value_t = false)]
+    plain: bool,
+
+    /// 输出 JSON；可选指定字段：assignee,active,resolved,closed,total
+    #[arg(
+        long,
+        num_args = 0..=1,
+        default_missing_value = "",
+        require_equals = true,
+        value_name = "FIELDS"
+    )]
+    json: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum BugState {
     Active,
     Resolved,
     Closed,
     All,
+}
+
+/// Shared list/stats search filters after clap parsing.
+#[derive(Debug, Clone)]
+struct BugSearchQuery {
+    title: Vec<String>,
+    assignee: Option<String>,
+    resolved_by: Option<String>,
+    resolved_from: Option<String>,
+    resolved_to: Option<String>,
+    module: Option<String>,
+    state: BugState,
+    product: Option<u64>,
+    limit: u32,
+}
+
+impl From<&BugListArgs> for BugSearchQuery {
+    fn from(args: &BugListArgs) -> Self {
+        let (resolved_from, resolved_to) = resolve_resolved_date_range(
+            args.week,
+            args.month,
+            args.day,
+            args.resolved_from.clone(),
+            args.resolved_to.clone(),
+            Local::now().date_naive(),
+        );
+        Self {
+            title: args.title.clone(),
+            assignee: args.assignee.clone(),
+            resolved_by: args.resolved_by.clone(),
+            resolved_from,
+            resolved_to,
+            module: args.module.clone(),
+            state: args.state,
+            product: args.product,
+            limit: args.limit,
+        }
+    }
+}
+
+impl From<&BugStatsArgs> for BugSearchQuery {
+    fn from(args: &BugStatsArgs) -> Self {
+        let (resolved_from, resolved_to) = resolve_resolved_date_range(
+            args.week,
+            args.month,
+            args.day,
+            args.resolved_from.clone(),
+            args.resolved_to.clone(),
+            Local::now().date_naive(),
+        );
+        Self {
+            title: args.title.clone(),
+            assignee: args.assignee.clone(),
+            resolved_by: args.resolved_by.clone(),
+            resolved_from,
+            resolved_to,
+            module: args.module.clone(),
+            state: args.state,
+            product: args.product,
+            limit: args.limit,
+        }
+    }
+}
+
+/// Expand --week/--month/--day into resolvedDate bounds (inclusive, YYYY-MM-DD).
+fn resolve_resolved_date_range(
+    week: bool,
+    month: bool,
+    day: bool,
+    resolved_from: Option<String>,
+    resolved_to: Option<String>,
+    today: NaiveDate,
+) -> (Option<String>, Option<String>) {
+    if week || month || day {
+        let (from, to) = if week {
+            reporting_week_bounds(today)
+        } else if month {
+            calendar_month_bounds(today)
+        } else {
+            (today, today)
+        };
+        return (
+            Some(from.format("%Y-%m-%d").to_string()),
+            Some(to.format("%Y-%m-%d").to_string()),
+        );
+    }
+    (
+        resolved_from.map(|s| strip_resolved_time_for_date(s.trim()).to_string()),
+        resolved_to.map(|s| strip_resolved_time_for_date(s.trim()).to_string()),
+    )
+}
+
+/// Keep calendar dates only for resolved bounds (drop trailing hms if present).
+fn strip_resolved_time_for_date(raw: &str) -> &str {
+    raw.split([' ', 'T'])
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(raw)
+}
+
+/// Calendar week: Monday through Sunday (inclusive), containing `today`.
+fn reporting_week_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) {
+    let days_since_monday = today.weekday().num_days_from_monday() as i64;
+    let start = today - Duration::days(days_since_monday);
+    let end = start + Duration::days(6);
+    (start, end)
+}
+
+fn calendar_month_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) {
+    let start =
+        NaiveDate::from_ymd_opt(today.year(), today.month(), 1).expect("valid first day of month");
+    let end = if today.month() == 12 {
+        NaiveDate::from_ymd_opt(today.year() + 1, 1, 1).expect("valid next year")
+            - Duration::days(1)
+    } else {
+        NaiveDate::from_ymd_opt(today.year(), today.month() + 1, 1).expect("valid next month")
+            - Duration::days(1)
+    };
+    (start, end)
+}
+
+#[derive(Debug, Clone)]
+struct AssigneeStatsRow {
+    assignee: String,
+    active: u32,
+    resolved: u32,
+    closed: u32,
+    total: u32,
+}
+
+#[derive(Debug, Clone)]
+struct BugStatsAggregate {
+    rows: Vec<AssigneeStatsRow>,
+    total: AssigneeStatsRow,
+    sample_size: u32,
+    limit: u32,
+    incomplete: bool,
+    /// Local wall-clock time when the search sample was fetched.
+    fetched_at: String,
+    /// Effective resolvedDate range after --week/--month/--day or explicit flags.
+    resolved_from: Option<String>,
+    resolved_to: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -547,6 +780,7 @@ fn run_chrome_profile(_args: ProfileArgs, global: &GlobalArgs) -> Result<()> {
 fn run_bug(args: BugArgs, global: &GlobalArgs) -> Result<()> {
     match args.command {
         BugSubCommands::List(args) => run_bug_list(args, global),
+        BugSubCommands::Stats(args) => run_bug_stats(args, global),
         BugSubCommands::View(args) => run_bug_view(args, global),
     }
 }
@@ -559,87 +793,8 @@ fn run_image(args: ImageArgs, global: &GlobalArgs) -> Result<()> {
 
 fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
     validate_optional_json_fields(args.json.as_deref(), LIST_JSON_FIELDS)?;
-    validate_search_group_limits(&args)?;
-
-    let cfg_path = resolve_config_path(global.config.as_deref())?;
-    let cfg = config::load_config_optional(&cfg_path)?;
-
-    let site_url = resolve_required(
-        global.site.as_deref(),
-        cfg.as_ref().map(|c| c.site.as_str()),
-        "site",
-    )?;
-
-    let product = args
-        .product
-        .or_else(|| cfg.as_ref().and_then(|c| c.product))
-        .ok_or_else(|| anyhow!("缺少 product，请通过 --product、ZENTAO_PRODUCT 或配置文件提供"))?;
-    if product == 0 {
-        return Err(anyhow!("product 必须是正整数"));
-    }
-
-    let api_client = ZentaoApi::new(&site_url)?;
-    let cookie = load_cookie_for_site(&site_url, None, cfg.as_ref())?;
-    let search_cookie_header = append_search_cookie_page_size(&cookie.cookie_header, args.limit);
-
-    // Build field overrides from CLI args
-    let mut field_params: Vec<(String, String)> = Vec::new();
-
-    let title_values: Vec<String> = args
-        .title
-        .iter()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if title_values.len() >= 2 {
-        for (idx, title) in title_values.iter().take(3).enumerate() {
-            field_params.push((format!("title_or_{}", idx + 1), title.clone()));
-        }
-    } else if let Some(keyword) = title_values.first() {
-        field_params.push(("title".to_string(), keyword.clone()));
-    }
-    if let Some(ref user) = args.assignee {
-        field_params.push(("assignedTo".to_string(), user.clone()));
-    }
-    if let Some(ref user) = args.resolved_by {
-        field_params.push(("resolvedBy".to_string(), user.clone()));
-    }
-    if let Some(ref date_from) = args.resolved_from {
-        field_params.push(("resolvedDate_from".to_string(), date_from.clone()));
-    }
-    if let Some(ref date_to) = args.resolved_to {
-        field_params.push(("resolvedDate_to".to_string(), date_to.clone()));
-    }
-    if let Some(ref module) = args.module {
-        field_params.push(("module".to_string(), module.clone()));
-    }
-    if let Some(status) = args.state.zentao_value() {
-        field_params.push(("status".to_string(), status.to_string()));
-    }
-
-    if debug_enabled() {
-        let debug_form = api_client.debug_search_form(product, &field_params)?;
-        let compact_form = compact_debug_search_form(&debug_form);
-        eprintln!("[debug] search-buildQuery form (andOr1..formType):");
-        for line in render_compact_debug_form_lines(&compact_form) {
-            eprintln!("{}", line);
-        }
-        eprintln!("[debug] search-buildQuery lisp:");
-        eprintln!("{}", render_search_form_lisp(&compact_form));
-    }
-
-    let html = api_client.search_bugs(&search_cookie_header, product, &field_params)?;
-
-    // DEBUG: dump raw HTML for diagnosis
-    if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_HTML") {
-        fs::write(&debug_path, &html)
-            .with_context(|| format!("写入调试 HTML 失败: {debug_path}"))?;
-        eprintln!("[debug] 搜索结果 HTML 已写入 {debug_path}");
-    }
-
-    let mut result = search::parse_search_result(&html)?;
-    apply_result_limit(&mut result, args.limit);
+    let query = BugSearchQuery::from(&args);
+    let (site_url, result) = execute_bug_search(&query, global)?;
     if let Some(fields) = args.json.as_deref() {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
@@ -655,15 +810,141 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
                 !plain,
             )
         );
+        if let Some(line) = format_resolved_date_range_line(
+            query.resolved_from.as_deref(),
+            query.resolved_to.as_deref(),
+        ) {
+            let styled = !plain && ansi_enabled();
+            println!("{}", paint_stats_date_meta(&line, styled));
+        }
     }
     Ok(())
+}
+
+fn run_bug_stats(args: BugStatsArgs, global: &GlobalArgs) -> Result<()> {
+    validate_optional_json_fields(args.json.as_deref(), STATS_JSON_FIELDS)?;
+    let query = BugSearchQuery::from(&args);
+    let (_site_url, result) = execute_bug_search(&query, global)?;
+    let stats = aggregate_stats_by_assignee(
+        &result.bugs,
+        args.limit,
+        stats_fetched_at_now(),
+        query.resolved_from.clone(),
+        query.resolved_to.clone(),
+    );
+    if stats.incomplete {
+        eprintln!(
+            "{}",
+            style_warning(&format_stats_incomplete_warning(&stats))
+        );
+    }
+    if let Some(fields) = args.json.as_deref() {
+        let json = render_stats_json(&stats, fields)?;
+        print_json(&json)?;
+    } else {
+        print!(
+            "{}",
+            render_bug_stats_table(&stats, !args.plain && ansi_enabled())
+        );
+    }
+    Ok(())
+}
+
+fn execute_bug_search(
+    query: &BugSearchQuery,
+    global: &GlobalArgs,
+) -> Result<(String, search::SearchResult)> {
+    validate_search_group_limits(query)?;
+
+    let cfg_path = resolve_config_path(global.config.as_deref())?;
+    let cfg = config::load_config_optional(&cfg_path)?;
+
+    let site_url = resolve_required(
+        global.site.as_deref(),
+        cfg.as_ref().map(|c| c.site.as_str()),
+        "site",
+    )?;
+
+    let product = query
+        .product
+        .or_else(|| cfg.as_ref().and_then(|c| c.product))
+        .ok_or_else(|| anyhow!("缺少 product，请通过 --product、ZENTAO_PRODUCT 或配置文件提供"))?;
+    if product == 0 {
+        return Err(anyhow!("product 必须是正整数"));
+    }
+
+    let api_client = ZentaoApi::new(&site_url)?;
+    let cookie = load_cookie_for_site(&site_url, None, cfg.as_ref())?;
+    let search_cookie_header = append_search_cookie_page_size(&cookie.cookie_header, query.limit);
+    let field_params = build_search_field_params(query);
+
+    if debug_enabled() {
+        let debug_form = api_client.debug_search_form(product, &field_params)?;
+        let compact_form = compact_debug_search_form(&debug_form);
+        eprintln!("[debug] search-buildQuery form (andOr1..formType):");
+        for line in render_compact_debug_form_lines(&compact_form) {
+            eprintln!("{}", line);
+        }
+        eprintln!("[debug] search-buildQuery lisp:");
+        eprintln!("{}", render_search_form_lisp(&compact_form));
+    }
+
+    let html = api_client.search_bugs(&search_cookie_header, product, &field_params)?;
+
+    if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_HTML") {
+        fs::write(&debug_path, &html)
+            .with_context(|| format!("写入调试 HTML 失败: {debug_path}"))?;
+        eprintln!("[debug] 搜索结果 HTML 已写入 {debug_path}");
+    }
+
+    let mut result = search::parse_search_result(&html)?;
+    apply_result_limit(&mut result, query.limit);
+    Ok((site_url, result))
+}
+
+fn build_search_field_params(query: &BugSearchQuery) -> Vec<(String, String)> {
+    let mut field_params: Vec<(String, String)> = Vec::new();
+
+    let title_values: Vec<String> = query
+        .title
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if title_values.len() >= 2 {
+        for (idx, title) in title_values.iter().take(3).enumerate() {
+            field_params.push((format!("title_or_{}", idx + 1), title.clone()));
+        }
+    } else if let Some(keyword) = title_values.first() {
+        field_params.push(("title".to_string(), keyword.clone()));
+    }
+    if let Some(ref user) = query.assignee {
+        field_params.push(("assignedTo".to_string(), user.clone()));
+    }
+    if let Some(ref user) = query.resolved_by {
+        field_params.push(("resolvedBy".to_string(), user.clone()));
+    }
+    if let Some(ref date_from) = query.resolved_from {
+        field_params.push(("resolvedDate_from".to_string(), date_from.clone()));
+    }
+    if let Some(ref date_to) = query.resolved_to {
+        field_params.push(("resolvedDate_to".to_string(), date_to.clone()));
+    }
+    if let Some(ref module) = query.module {
+        field_params.push(("module".to_string(), module.clone()));
+    }
+    if let Some(status) = query.state.zentao_value() {
+        field_params.push(("status".to_string(), status.to_string()));
+    }
+    field_params
 }
 
 fn apply_result_limit(result: &mut search::SearchResult, limit: u32) {
     result.bugs.truncate(limit as usize);
 }
 
-fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
+fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> {
     // Zentao search-buildQuery uses 2 groups with 3 slots each:
     // group1: slot1~3, group2: slot4~6.
     let title_count = args.title.iter().filter(|v| !v.trim().is_empty()).count();
@@ -693,7 +974,7 @@ fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
                 "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）。{}",
                 n,
                 title_count,
-                active_state_slot_hint(args),
+                active_state_slot_hint(args.state),
             ));
         }
     } else {
@@ -723,7 +1004,7 @@ fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
             return Err(anyhow!(
                 "当前搜索条件超过 6 个（实际 {} 个），请减少条件。{}",
                 total,
-                active_state_slot_hint(args),
+                active_state_slot_hint(args.state),
             ));
         }
     }
@@ -737,11 +1018,265 @@ fn validate_search_group_limits(args: &BugListArgs) -> Result<()> {
     Ok(())
 }
 
-fn active_state_slot_hint(args: &BugListArgs) -> &'static str {
-    if matches!(args.state, BugState::Active) {
-        "active 状态（未指定 --state 时默认启用）占用一个条件槽位；如不需要状态筛选，请使用 --state all 释放该槽位"
+fn active_state_slot_hint(state: BugState) -> &'static str {
+    if matches!(state, BugState::Active) {
+        "active 状态（list 未指定 --state 时默认启用）占用一个条件槽位；如不需要状态筛选，请使用 --state all 释放该槽位"
     } else {
         ""
+    }
+}
+
+fn normalize_stats_assignee(raw: &str) -> String {
+    let value = raw.trim();
+    if value.is_empty() || value == "--" {
+        BUG_STATS_UNASSIGNED.to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn empty_stats_row(assignee: impl Into<String>) -> AssigneeStatsRow {
+    AssigneeStatsRow {
+        assignee: assignee.into(),
+        active: 0,
+        resolved: 0,
+        closed: 0,
+        total: 0,
+    }
+}
+
+fn stats_fetched_at_now() -> String {
+    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+fn format_resolved_date_range_line(from: Option<&str>, to: Option<&str>) -> Option<String> {
+    match (
+        from.map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(strip_resolved_time_for_date),
+        to.map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(strip_resolved_time_for_date),
+    ) {
+        (Some(from), Some(to)) => Some(format!("解决日期: {from} ~ {to}")),
+        (Some(from), None) => Some(format!("解决日期: from {from}")),
+        (None, Some(to)) => Some(format!("解决日期: to {to}")),
+        (None, None) => None,
+    }
+}
+
+fn aggregate_stats_by_assignee(
+    bugs: &[search::BugRow],
+    limit: u32,
+    fetched_at: String,
+    resolved_from: Option<String>,
+    resolved_to: Option<String>,
+) -> BugStatsAggregate {
+    // Person rows only count non-closed bugs by current assignee.
+    // Closed bugs are bucketed separately: Zentao list often shows assignee as "Closed".
+    let mut by_person: HashMap<String, AssigneeStatsRow> = HashMap::new();
+    let mut closed_bucket = empty_stats_row(BUG_STATS_CLOSED_BUCKET);
+
+    for bug in bugs {
+        match canonical_state(&bug.status) {
+            "closed" => {
+                closed_bucket.closed += 1;
+                closed_bucket.total += 1;
+            }
+            state => {
+                let key = normalize_stats_assignee(&bug.assigned_to);
+                let row = by_person
+                    .entry(key.clone())
+                    .or_insert_with(|| empty_stats_row(key));
+                row.total += 1;
+                match state {
+                    "active" => row.active += 1,
+                    "resolved" => row.resolved += 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let mut rows: Vec<AssigneeStatsRow> = by_person.into_values().collect();
+    // Who still has the most work: active first, then pending verification.
+    rows.sort_by(|a, b| {
+        b.active
+            .cmp(&a.active)
+            .then_with(|| b.resolved.cmp(&a.resolved))
+            .then_with(|| a.assignee.cmp(&b.assignee))
+    });
+    if closed_bucket.total > 0 {
+        rows.push(closed_bucket);
+    }
+
+    let total = AssigneeStatsRow {
+        assignee: BUG_STATS_TOTAL_LABEL.to_string(),
+        active: rows.iter().map(|r| r.active).sum(),
+        resolved: rows.iter().map(|r| r.resolved).sum(),
+        closed: rows.iter().map(|r| r.closed).sum(),
+        total: rows.iter().map(|r| r.total).sum(),
+    };
+    let sample_size = bugs.len() as u32;
+    BugStatsAggregate {
+        rows,
+        total,
+        sample_size,
+        limit,
+        incomplete: sample_size >= limit,
+        fetched_at,
+        resolved_from,
+        resolved_to,
+    }
+}
+
+fn format_stats_fetched_at_line(fetched_at: &str) -> String {
+    format!("更新时间: {fetched_at}")
+}
+
+/// Apply ANSI only when `styled` is true (caller already gates TTY / --plain / NO_COLOR).
+fn paint_stats(value: &str, code: &str, styled: bool) -> String {
+    if styled {
+        format!("\x1b[{code}m{value}\x1b[0m")
+    } else {
+        value.to_string()
+    }
+}
+
+/// Resolved-date meta line: muted blue (not bright, distinct from names/counts).
+fn paint_stats_date_meta(value: &str, styled: bool) -> String {
+    paint_stats(value, "34", styled)
+}
+
+fn style_stats_assignee_cell(assignee: &str, styled: bool) -> String {
+    let padded = pad_to_display_width(
+        &truncate_for_table(assignee, BUG_STATS_ASSIGNEE_WIDTH),
+        BUG_STATS_ASSIGNEE_WIDTH,
+    );
+    let code = if assignee == BUG_STATS_TOTAL_LABEL {
+        "1;36" // bold cyan — 合计
+    } else if assignee == BUG_STATS_CLOSED_BUCKET || assignee == BUG_STATS_UNASSIGNED {
+        "90" // dim — 系统行
+    } else {
+        "36" // cyan — 人名
+    };
+    paint_stats(&padded, code, styled)
+}
+
+fn style_stats_count_cell(value: u32, styled: bool, emphasize: bool) -> String {
+    let padded = pad_to_display_width(&value.to_string(), BUG_STATS_COUNT_WIDTH);
+    // Mid tone: normal white (readable, not flashy yellow / not dim gray).
+    let code = if emphasize { "1;37" } else { "37" };
+    paint_stats(&padded, code, styled)
+}
+
+fn append_stats_meta_lines(out: &mut String, stats: &BugStatsAggregate, styled: bool) {
+    out.push('\n');
+    if let Some(range) = format_resolved_date_range_line(
+        stats.resolved_from.as_deref(),
+        stats.resolved_to.as_deref(),
+    ) {
+        out.push_str(&paint_stats_date_meta(&range, styled));
+        out.push('\n');
+    }
+    // Slightly brighter than dim gray so the footer stays readable.
+    out.push_str(&paint_stats(
+        &format_stats_fetched_at_line(&stats.fetched_at),
+        "37",
+        styled,
+    ));
+    out.push('\n');
+}
+
+fn render_bug_stats_table(stats: &BugStatsAggregate, styled: bool) -> String {
+    if stats.sample_size == 0 {
+        let mut out = String::from("没有找到 Bug\n");
+        append_stats_meta_lines(&mut out, stats, styled);
+        return out;
+    }
+
+    let header = format!(
+        "{} {} {} {} {}",
+        pad_to_display_width("指派给", BUG_STATS_ASSIGNEE_WIDTH),
+        pad_to_display_width("激活", BUG_STATS_COUNT_WIDTH),
+        pad_to_display_width("待验证", BUG_STATS_COUNT_WIDTH),
+        pad_to_display_width("关闭", BUG_STATS_COUNT_WIDTH),
+        pad_to_display_width("合计", BUG_STATS_COUNT_WIDTH),
+    );
+    let mut out = format!(
+        "{}\n",
+        if styled {
+            style_header(&header)
+        } else {
+            header
+        }
+    );
+
+    for row in stats.rows.iter().chain(std::iter::once(&stats.total)) {
+        let emphasize = row.assignee == BUG_STATS_TOTAL_LABEL;
+        out.push_str(&format!(
+            "{} {} {} {} {}\n",
+            style_stats_assignee_cell(&row.assignee, styled),
+            style_stats_count_cell(row.active, styled, emphasize),
+            style_stats_count_cell(row.resolved, styled, emphasize),
+            style_stats_count_cell(row.closed, styled, emphasize),
+            style_stats_count_cell(row.total, styled, emphasize),
+        ));
+    }
+    append_stats_meta_lines(&mut out, stats, styled);
+    out
+}
+
+fn format_stats_incomplete_warning(stats: &BugStatsAggregate) -> String {
+    format!(
+        "warning: 样本已达 limit={}（聚合 {} 条），可能不全；请提高 -L 或收窄筛选",
+        stats.limit, stats.sample_size
+    )
+}
+
+fn render_stats_json(stats: &BugStatsAggregate, fields: &str) -> Result<Value> {
+    let fields = parse_json_fields(fields, STATS_JSON_FIELDS)?;
+    let rows: Vec<Value> = stats
+        .rows
+        .iter()
+        .map(|row| Value::Object(stats_row_json_body(row, &fields, true)))
+        .collect();
+    Ok(json!({
+        "groupBy": "assignee",
+        "sampleSize": stats.sample_size,
+        "limit": stats.limit,
+        "incomplete": stats.incomplete,
+        "fetchedAt": stats.fetched_at,
+        "resolvedFrom": stats.resolved_from,
+        "resolvedTo": stats.resolved_to,
+        "rows": rows,
+        "total": stats_row_json_body(&stats.total, &fields, false),
+    }))
+}
+
+fn stats_row_json_body(
+    row: &AssigneeStatsRow,
+    fields: &[String],
+    include_assignee: bool,
+) -> Map<String, Value> {
+    let mut out = Map::new();
+    for field in fields {
+        if field == "assignee" && !include_assignee {
+            continue;
+        }
+        out.insert(field.to_string(), stats_json_value(row, field));
+    }
+    out
+}
+
+fn stats_json_value(row: &AssigneeStatsRow, field: &str) -> Value {
+    match field {
+        "assignee" => json!(row.assignee),
+        "active" => json!(row.active),
+        "resolved" => json!(row.resolved),
+        "closed" => json!(row.closed),
+        "total" => json!(row.total),
+        _ => Value::Null,
     }
 }
 
@@ -766,6 +1301,8 @@ const LIST_JSON_FIELDS: &[&str] = &[
     "deadline",
     "url",
 ];
+
+const STATS_JSON_FIELDS: &[&str] = &["assignee", "active", "resolved", "closed", "total"];
 
 const VIEW_JSON_FIELDS: &[&str] = &[
     "id",
@@ -1010,6 +1547,10 @@ fn ansi_enabled() -> bool {
     io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
+fn stderr_ansi_enabled() -> bool {
+    io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
 fn style_header(value: &str) -> String {
     style_ansi(value, "1")
 }
@@ -1030,6 +1571,15 @@ fn style_success(value: &str) -> String {
 
 fn style_error(value: &str) -> String {
     style_ansi(value, "1;31")
+}
+
+/// Yellow warning for stderr (TTY + no NO_COLOR).
+fn style_warning(value: &str) -> String {
+    if stderr_ansi_enabled() {
+        format!("\x1b[1;33m{value}\x1b[0m")
+    } else {
+        value.to_string()
+    }
 }
 
 fn style_ansi(value: &str, code: &str) -> String {

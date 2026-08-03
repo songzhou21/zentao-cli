@@ -4,11 +4,14 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 
 ## 命令约定
 
-- Bug 资源入口：`zentao bug list`、`zentao bug view <ID|URL>`。
+- Bug 资源入口：`zentao bug list`、`zentao bug stats`、`zentao bug view <ID|URL>`。
 - 不保留 `zentao search` 或 `zentao bug show` 兼容入口。
 - 全局配置：`--site`、`--config`。
-- `bug list` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
-- 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。
+- `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
+- `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。
+- `bug stats` 按当前 assignee 聚合状态剖面；默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。
+- `bug stats`：仅 active/resolved 按人聚合；`closed` 进 `(已关闭)`；排序激活↓再待验证↓；表头为指派给/激活/待验证/关闭/合计；无 `--full-title`，无 `--group-by`。
+- `list`/`stats` 解决日期快捷：`--week`（周一～周日）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，与 `--resolved-from/to` 互斥。
 - JSON 使用 `--json[=fields]`；裸 `--json` 输出全部字段，指定字段必须使用 `--json=id,title`。
 - 列表表格默认截断 TITLE（显示宽度 65）；`--full-title` 仅展开表格标题为完整单行，不改变 `--title` 搜索条件，不放开 ASSIGNEE 截断，与 `--json` 可并用（JSON 路径静默忽略）。
 - 列表表格在 stdout 为 TTY 时，TITLE 默认包 OSC 8 超链接（目标与 JSON `url` 相同的 `bug-view-<id>.html`）；可见文本不变、不加下划线/变色；管道/重定向不输出 OSC；不跟 `NO_COLOR` 绑死。

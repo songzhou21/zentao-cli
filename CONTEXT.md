@@ -23,3 +23,11 @@ _Avoid_: Login method, credential store
 **Bug List**:
 在一个 Site 和 Product 作用域内，按禅道可验证筛选条件查询得到的 Bug 集合。
 _Avoid_: Search result, report
+
+**Bug Stats**:
+在与 Bug List 相同的筛选母集上，对 active/resolved 按当前指派人聚合；closed 不归入个人（列表常显示 `Closed`），单独记入 `(已关闭)` 并计入合计。人类表头用中文；JSON 字段名仍为英文。`resolved` 表示待验证，`closed` 表示关闭。样本受 `-L/--limit` 约束，不保证全集。
+_Avoid_: Report export, dashboard, group-by engine
+
+**Active / Resolved / Closed**:
+禅道 Bug 状态在 CLI 中的规范值。`active` 为激活；`resolved` 为待验证（非结案）；`closed` 为关闭。
+_Avoid_: Open/fixed/done（除非映射到上述三态）

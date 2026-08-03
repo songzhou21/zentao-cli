@@ -43,6 +43,15 @@ zentao bug list --title 会议优化5.1期 -s all --full-title
 # 纯文本表格：无超链接、无颜色（便于复制）
 zentao bug list --title 会议优化5.1期 -s all --full-title --plain
 
+# 按指派人统计状态剖面（默认 --state all、-L 1000；样本制）
+zentao bug stats --title 会议优化5.1期
+zentao bug stats --module 1099 --json=assignee,active,resolved,closed,total
+
+# 解决日期快捷（list/stats 均可；与 --resolved-from/to 互斥）
+zentao bug stats --week                 # 本周一～本周日
+zentao bug stats --month                # 本月
+zentao bug list --day -s all            # 今天
+
 # JSON 输出
 zentao bug view 57801 --json
 zentao bug list --json=id,title,state,assignee
@@ -54,7 +63,13 @@ zentao bug view 57801 -o ./bug-57801.md
 zentao bug view 57801 --json=id,title,description,images,attachments
 ```
 
-`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--module`、`-s/--state`、`-L/--limit`、`--full-title` 和 `--plain`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。表格默认按显示宽度截断 TITLE；`--full-title` 仅影响人类可读表格，展示完整标题，不影响搜索条件；JSON 路径本身已是完整字段，可与 `--full-title` / `--plain` 并用（静默忽略）。
+`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--week` / `--month` / `--day`（解决日期快捷，与手动 from/to 互斥）、`--module`、`-s/--state`、`-L/--limit`、`--full-title` 和 `--plain`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。表格默认按显示宽度截断 TITLE；`--full-title` 仅影响人类可读表格，展示完整标题，不影响搜索条件；JSON 路径本身已是完整字段，可与 `--full-title` / `--plain` 并用（静默忽略）。
+
+解决日期快捷含义（按本地日历日，含首尾）：`--week` 为本周一～本周日；`--month` 为本月 1 日～月末；`--day` 为今天。三者互斥，且会写入与 `--resolved-from` / `--resolved-to` 相同的禅道 `resolvedDate` 条件。
+
+`bug stats` 复用与 list 相同的筛选参数，但默认 `--state all`、`-L 1000`，且**没有** `--full-title`。它在本次样本上对 **active / resolved** 按当前 assignee 分组；**closed 不按人归类**（列表里关闭单的指派给常为 `Closed`），单独记入 `(已关闭)` 行并计入合计。人员行排序：**激活降序 → 待验证降序 → 名字**。人类表格表头：`指派给` / `激活` / `待验证` / `关闭` / `合计`。空指派为 `(未指派)`；表底有 `合计`。JSON 字段名仍为英文（`assignee`/`active`/`resolved`/`closed`/`total`）。统计是样本制：只聚合不超过 limit 的 Bug，**不保证全集**；触顶时 stderr 警告，JSON `incomplete` 为 `true`。
+
+stats JSON 形态为对象（不是 bug 数组），字段包括 `groupBy`、`sampleSize`、`limit`、`incomplete`、`fetchedAt`、`resolvedFrom`、`resolvedTo`、`rows`、`total`；行字段为 `assignee`、`active`、`resolved`、`closed`、`total`。`--json=assignee,active` 可裁剪 `rows`/`total` 内字段；`total` 不含 `assignee`。人类表格在合计行下方单独输出元信息：有解决日期条件时一行 `解决日期: from ~ to`，再一行 `更新时间: YYYY-MM-DD HH:MM:SS`（本地抓取时刻）。
 
 在终端（TTY，如 Kitty）中，`bug list` 表格的 TITLE 默认可点击：使用 OSC 8 超链接，目标地址与 JSON `url` 相同（`<site>/bug-view-<id>.html`）。标题外观不变（无额外下划线或变色）；管道/重定向时不注入控制序列。需要纯文本（无超链接、无颜色）时加 `--plain`。
 

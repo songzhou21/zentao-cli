@@ -24,7 +24,7 @@
 重点：
 
 - 参数与分支逻辑
-- `bug list/view`、认证、配置和 JSON 字段契约
+- `bug list/stats/view`、认证、配置和 JSON 字段契约
 - 错误路径与边界条件
 - 核心业务规则断言
 
