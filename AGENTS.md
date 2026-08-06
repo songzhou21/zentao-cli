@@ -9,6 +9,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 全局配置：`--site`、`--config`。
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
 - `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。
+- `bug list` 带解决日期筛选（`--week` / `--month` / `--day` / `--resolved-from` / `--resolved-to`）且未显式 `--state` 时，状态自动为 `all`（避免默认 active 与已解决日期互斥导致空结果）；显式 `-s` 仍优先生效。
 - `bug stats` 按当前 assignee 聚合状态剖面；默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。
 - `bug stats`：仅 active/resolved 按人聚合；`closed` 进 `(已关闭)`；排序激活↓再待验证↓；表头为指派给/激活/待验证/关闭/合计；无 `--full-title`，无 `--group-by`。
 - `list`/`stats` 解决日期快捷：`--week`（周一～周日）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，与 `--resolved-from/to` 互斥。
@@ -34,7 +35,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 重复 `--title` 最多三个值，按 OR；可与最多三个非标题条件组合。
 - 重复 `--opened-by` 最多三个值（用户账号，非中文显示名），按 OR；可与最多三个非创建者条件组合。
 - 同时重复 `--title` 与 `--opened-by` 时两组槽位都被 OR 占满，不能再叠加其他筛选（含默认 `active` 状态，需 `--state all`）。
-- 默认 `--state active` 也占用一个条件槽位；不需状态筛选时使用 `--state all` 释放该槽位。
+- 默认 `--state active` 也占用一个条件槽位；不需状态筛选时使用 `--state all` 释放该槽位（list 在仅有解决日期条件时会自动用 `all`，不占状态槽）。
 - 不要重新加入标题前缀“模块分组”：它不是禅道模块字段。
 
 ## 测试

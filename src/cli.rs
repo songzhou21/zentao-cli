@@ -194,9 +194,9 @@ struct BugListArgs {
     #[arg(long, value_name = "MODULE_ID")]
     module: Option<String>,
 
-    /// Bug 状态；默认 active
-    #[arg(short = 's', long, value_enum, default_value_t = BugState::Active)]
-    state: BugState,
+    /// Bug 状态；默认 active。带解决日期筛选且未显式指定时改为 all
+    #[arg(short = 's', long, value_enum, value_name = "STATE")]
+    state: Option<BugState>,
 
     /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
     #[arg(long, env = "ZENTAO_PRODUCT", value_name = "ID")]
@@ -339,6 +339,7 @@ impl From<&BugListArgs> for BugSearchQuery {
             args.resolved_to.clone(),
             Local::now().date_naive(),
         );
+        let state = resolve_list_bug_state(args.state, &resolved_from, &resolved_to);
         Self {
             title: args.title.clone(),
             assignee: args.assignee.clone(),
@@ -347,10 +348,27 @@ impl From<&BugListArgs> for BugSearchQuery {
             resolved_from,
             resolved_to,
             module: args.module.clone(),
-            state: args.state,
+            state,
             product: args.product,
             limit: args.limit,
         }
+    }
+}
+
+/// Default list state is active; resolved-date filters default to all so the
+/// date range is not wiped out by the active-only default.
+fn resolve_list_bug_state(
+    explicit: Option<BugState>,
+    resolved_from: &Option<String>,
+    resolved_to: &Option<String>,
+) -> BugState {
+    if let Some(state) = explicit {
+        return state;
+    }
+    if resolved_from.is_some() || resolved_to.is_some() {
+        BugState::All
+    } else {
+        BugState::Active
     }
 }
 

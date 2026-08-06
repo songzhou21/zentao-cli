@@ -110,7 +110,7 @@ fn global_options_and_bug_list_parse() {
         }) => {
             assert_eq!(args.product, Some(92));
             assert_eq!(args.assignee.as_deref(), Some("zhousong"));
-            assert!(matches!(args.state, BugState::All));
+            assert!(matches!(args.state, Some(BugState::All)));
             assert_eq!(args.limit, 50);
             assert_eq!(args.title, vec!["会议"]);
             assert!(!args.full_title);
@@ -118,6 +118,65 @@ fn global_options_and_bug_list_parse() {
         }
         _ => panic!("unexpected command"),
     }
+}
+
+#[test]
+fn bug_list_resolved_date_filters_default_state_to_all() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--week"]).expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(args.state.is_none(), "clap should leave state unset");
+    let query = BugSearchQuery::from(&args);
+    assert!(matches!(query.state, BugState::All));
+    assert!(query.resolved_from.is_some());
+    assert!(query.resolved_to.is_some());
+
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--resolved-from",
+        "2026-08-01",
+        "--resolved-to",
+        "2026-08-31",
+    ])
+    .expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(matches!(BugSearchQuery::from(&args).state, BugState::All));
+
+    let cli =
+        Cli::try_parse_from(["zentao", "bug", "list", "--week", "-s", "active"]).expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(matches!(
+        BugSearchQuery::from(&args).state,
+        BugState::Active
+    ));
+
+    let cli = Cli::try_parse_from(["zentao", "bug", "list"]).expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(matches!(
+        BugSearchQuery::from(&args).state,
+        BugState::Active
+    ));
 }
 
 #[test]

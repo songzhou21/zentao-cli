@@ -66,7 +66,7 @@ zentao bug view 57801 --json=id,title,description,images,attachments
 
 `--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--opened-by`（可重复，最多 3 个，按 OR；值为禅道用户账号如 `chenjie`，不是中文显示名）、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--week` / `--month` / `--day`（解决日期快捷，与手动 from/to 互斥）、`--module`、`-s/--state`、`-L/--limit`、`--full-title` 和 `--plain`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。表格默认按显示宽度截断 TITLE；`--full-title` 仅影响人类可读表格，展示完整标题，不影响搜索条件；JSON 路径本身已是完整字段，可与 `--full-title` / `--plain` 并用（静默忽略）。
 
-解决日期快捷含义（按本地日历日，含首尾）：`--week` 为本周一～本周日；`--month` 为本月 1 日～月末；`--day` 为今天。三者互斥，且会写入与 `--resolved-from` / `--resolved-to` 相同的禅道 `resolvedDate` 条件。
+解决日期快捷含义（按本地日历日，含首尾）：`--week` 为本周一～本周日；`--month` 为本月 1 日～月末；`--day` 为今天。三者互斥，且会写入与 `--resolved-from` / `--resolved-to` 相同的禅道 `resolvedDate` 条件。`bug list` 在带有任一解决日期条件且未显式 `-s/--state` 时，状态自动为 `all`（避免默认 `active` 与「已解决日期」互斥导致空列表）；显式指定状态时仍以用户为准。
 
 `bug stats` 复用与 list 相同的筛选参数，但默认 `--state all`、`-L 1000`，且**没有** `--full-title`。它在本次样本上对 **active / resolved** 按当前 assignee 分组；**closed 不按人归类**（列表里关闭单的指派给常为 `Closed`），单独记入 `(已关闭)` 行并计入合计。人员行排序：**激活降序 → 待验证降序 → 名字**。人类表格表头：`指派给` / `激活` / `待验证` / `关闭` / `合计`。空指派为 `(未指派)`；表底有 `合计`。JSON 字段名仍为英文（`assignee`/`active`/`resolved`/`closed`/`total`）。统计是样本制：只聚合不超过 limit 的 Bug，**不保证全集**；触顶时 stderr 警告，JSON `incomplete` 为 `true`。
 
