@@ -205,6 +205,105 @@ fn default_active_state_slot_limit_error_suggests_state_all() {
 }
 
 #[test]
+fn bug_list_parses_opened_by_repeatable() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--opened-by",
+        "chenjie",
+        "--opened-by",
+        "niuweilong",
+        "--opened-by",
+        "cuiwenbo",
+        "-s",
+        "active",
+    ])
+    .expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::List(args),
+        }) => {
+            assert_eq!(args.opened_by, vec!["chenjie", "niuweilong", "cuiwenbo"]);
+            let query = BugSearchQuery::from(&args);
+            validate_search_group_limits(&query).expect("3 opened-by + active fits");
+            let params = build_search_field_params(&query);
+            assert!(params
+                .iter()
+                .any(|(k, v)| k == "opened_by_or_1" && v == "chenjie"));
+            assert!(params
+                .iter()
+                .any(|(k, v)| k == "opened_by_or_2" && v == "niuweilong"));
+            assert!(params
+                .iter()
+                .any(|(k, v)| k == "opened_by_or_3" && v == "cuiwenbo"));
+            assert!(params.iter().any(|(k, v)| k == "status" && v == "active"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn opened_by_more_than_three_rejected() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--opened-by",
+        "a",
+        "--opened-by",
+        "b",
+        "--opened-by",
+        "c",
+        "--opened-by",
+        "d",
+        "--state",
+        "all",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("4 opened-by values exceed max");
+    assert!(error.to_string().contains("--opened-by"));
+}
+
+#[test]
+fn title_or_and_opened_by_or_reject_extra_filters() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--title",
+        "A",
+        "--title",
+        "B",
+        "--opened-by",
+        "chenjie",
+        "--opened-by",
+        "niuweilong",
+        "-a",
+        "zhousong",
+        "--state",
+        "all",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("both multi-OR plus assignee should fail");
+    assert!(error.to_string().contains("不能再叠加"));
+}
+
+#[test]
 fn bug_stats_defaults_to_state_all_and_limit_1000() {
     let cli = Cli::try_parse_from(["zentao", "bug", "stats"]).expect("should parse");
     match cli.command {
@@ -715,7 +814,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         confirmed: String::new(),
         title: "中文标题".to_string(),
         status: "active".to_string(),
-        opened_by: String::new(),
+        opened_by: "陈婕".to_string(),
         opened_date: "07-31 10:00".to_string(),
         assigned_to: "alice".to_string(),
         resolved_date: String::new(),
@@ -732,9 +831,20 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         false,
         false,
     );
+    let header = table.lines().next().expect("header");
+    assert!(header.contains("创建者"));
+    assert!(header.contains("创建日期"));
+    assert!(header.contains("指派给"));
     let row = table.lines().nth(1).expect("row");
+    // 编号(6)+sp+状态(9)+sp+创建者(10)+sp+创建日期(11)+sp+标题(65)+sp = 106 before 指派给
     let assignee_byte = row.find("alice").expect("assignee");
-    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 83);
+    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 106);
+    let opened_by_byte = row.find("陈婕").expect("opened_by");
+    assert_eq!(UnicodeWidthStr::width(&row[..opened_by_byte]), 17);
+    let opened_date_byte = row.find("07-31 10:00").expect("opened_date");
+    assert_eq!(UnicodeWidthStr::width(&row[..opened_date_byte]), 28);
+    assert!(row.contains("陈婕"));
+    assert!(row.contains("07-31 10:00"));
     let six_columns = truncate_for_table("中文标题", 6);
     let five_columns = truncate_for_table("中文标题", 5);
     assert_eq!(UnicodeWidthStr::width(six_columns.as_str()), 6);
@@ -752,7 +862,7 @@ fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
         confirmed: String::new(),
         title: format!("{long_title}\n换行"),
         status: "resolved".to_string(),
-        opened_by: String::new(),
+        opened_by: "牛威龙".to_string(),
         opened_date: "07-31 16:36".to_string(),
         assigned_to: long_assignee.to_string(),
         resolved_date: String::new(),

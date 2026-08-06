@@ -21,8 +21,11 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 const IMAGE_DOWNLOAD_DIR: &str = "/tmp/zentao-images";
 const BUG_LIST_ID_WIDTH: usize = 6;
 const BUG_LIST_STATE_WIDTH: usize = 9;
+const BUG_LIST_OPENED_BY_WIDTH: usize = 10;
 const BUG_LIST_TITLE_WIDTH: usize = 65;
 const BUG_LIST_ASSIGNEE_WIDTH: usize = 10;
+/// Fits Zentao list dates like `08-06 10:51` (no year).
+const BUG_LIST_OPENED_DATE_WIDTH: usize = 11;
 const BUG_STATS_ASSIGNEE_WIDTH: usize = 16;
 const BUG_STATS_COUNT_WIDTH: usize = 8;
 const BUG_STATS_UNASSIGNED: &str = "(未指派)";
@@ -159,6 +162,10 @@ struct BugListArgs {
     #[arg(short = 'a', long, value_name = "USER")]
     assignee: Option<String>,
 
+    /// 创建者（用户名/账号，例如 chenjie）。可重复传入，多个值按 OR 处理，最多 3 个
+    #[arg(long, value_name = "USER")]
+    opened_by: Vec<String>,
+
     /// 解决者（用户名），例如 zhousong
     #[arg(long, value_name = "USER")]
     resolved_by: Option<String>,
@@ -234,6 +241,10 @@ struct BugStatsArgs {
     #[arg(short = 'a', long, value_name = "USER")]
     assignee: Option<String>,
 
+    /// 创建者（用户名/账号，例如 chenjie）。可重复传入，多个值按 OR 处理，最多 3 个
+    #[arg(long, value_name = "USER")]
+    opened_by: Vec<String>,
+
     /// 解决者（用户名），例如 zhousong
     #[arg(long, value_name = "USER")]
     resolved_by: Option<String>,
@@ -308,6 +319,7 @@ enum BugState {
 struct BugSearchQuery {
     title: Vec<String>,
     assignee: Option<String>,
+    opened_by: Vec<String>,
     resolved_by: Option<String>,
     resolved_from: Option<String>,
     resolved_to: Option<String>,
@@ -330,6 +342,7 @@ impl From<&BugListArgs> for BugSearchQuery {
         Self {
             title: args.title.clone(),
             assignee: args.assignee.clone(),
+            opened_by: args.opened_by.clone(),
             resolved_by: args.resolved_by.clone(),
             resolved_from,
             resolved_to,
@@ -354,6 +367,7 @@ impl From<&BugStatsArgs> for BugSearchQuery {
         Self {
             title: args.title.clone(),
             assignee: args.assignee.clone(),
+            opened_by: args.opened_by.clone(),
             resolved_by: args.resolved_by.clone(),
             resolved_from,
             resolved_to,
@@ -919,6 +933,21 @@ fn build_search_field_params(query: &BugSearchQuery) -> Vec<(String, String)> {
     } else if let Some(keyword) = title_values.first() {
         field_params.push(("title".to_string(), keyword.clone()));
     }
+
+    let opened_by_values: Vec<String> = query
+        .opened_by
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if opened_by_values.len() >= 2 {
+        for (idx, user) in opened_by_values.iter().take(3).enumerate() {
+            field_params.push((format!("opened_by_or_{}", idx + 1), user.clone()));
+        }
+    } else if let Some(user) = opened_by_values.first() {
+        field_params.push(("openedBy".to_string(), user.clone()));
+    }
+
     if let Some(ref user) = query.assignee {
         field_params.push(("assignedTo".to_string(), user.clone()));
     }
@@ -947,57 +976,89 @@ fn apply_result_limit(result: &mut search::SearchResult, limit: u32) {
 fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> {
     // Zentao search-buildQuery uses 2 groups with 3 slots each:
     // group1: slot1~3, group2: slot4~6.
+    // Multi-value --title / --opened-by each occupy one full group as OR.
     let title_count = args.title.iter().filter(|v| !v.trim().is_empty()).count();
+    let opened_by_count = args
+        .opened_by
+        .iter()
+        .filter(|v| !v.trim().is_empty())
+        .count();
+    if title_count > 3 {
+        return Err(anyhow!(
+            "重复 --title 最多支持 3 个值（当前 {} 个）",
+            title_count
+        ));
+    }
+    if opened_by_count > 3 {
+        return Err(anyhow!(
+            "重复 --opened-by 最多支持 3 个值（当前 {} 个）",
+            opened_by_count
+        ));
+    }
+
     let has_title_or = title_count >= 2;
-    if has_title_or {
-        let mut n = 0usize;
-        if args.module.is_some() {
-            n += 1;
+    let has_opened_by_or = opened_by_count >= 2;
+    let mut other = 0usize;
+    if args.module.is_some() {
+        other += 1;
+    }
+    if args.assignee.is_some() {
+        other += 1;
+    }
+    if args.resolved_by.is_some() {
+        other += 1;
+    }
+    if args.state.zentao_value().is_some() {
+        other += 1;
+    }
+    if args.resolved_from.is_some() {
+        other += 1;
+    }
+    if args.resolved_to.is_some() {
+        other += 1;
+    }
+
+    if has_title_or && has_opened_by_or {
+        if other > 0 {
+            return Err(anyhow!(
+                "重复 --title 与重复 --opened-by 已分别占满两组条件槽，不能再叠加其他筛选。{}",
+                active_state_slot_hint(args.state),
+            ));
         }
-        if args.assignee.is_some() {
-            n += 1;
+    } else if has_title_or {
+        // group2 = title OR; group1 = other + single openedBy
+        let mut group1 = other;
+        if opened_by_count == 1 {
+            group1 += 1;
         }
-        if args.resolved_by.is_some() {
-            n += 1;
-        }
-        if args.state.zentao_value().is_some() {
-            n += 1;
-        }
-        if args.resolved_from.is_some() {
-            n += 1;
-        }
-        if args.resolved_to.is_some() {
-            n += 1;
-        }
-        if n > 3 {
+        if group1 > 3 {
             return Err(anyhow!(
                 "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）。{}",
-                n,
+                group1,
                 title_count,
                 active_state_slot_hint(args.state),
             ));
         }
+    } else if has_opened_by_or {
+        // group2 = openedBy OR; group1 = other + single title
+        let mut group1 = other;
+        if title_count == 1 {
+            group1 += 1;
+        }
+        if group1 > 3 {
+            return Err(anyhow!(
+                "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）。{}",
+                group1,
+                opened_by_count,
+                active_state_slot_hint(args.state),
+            ));
+        }
     } else {
-        let mut total = 0usize;
-        if args.module.is_some() {
-            total += 1;
-        }
-        if args.assignee.is_some() {
-            total += 1;
-        }
-        if args.resolved_by.is_some() {
-            total += 1;
-        }
-        if args.resolved_from.is_some() {
-            total += 1;
-        }
+        let mut total = other;
         if title_count >= 1 {
             total += 1;
         }
-        if args.state.zentao_value().is_some() {
-            total += 1;
-        }
-        if args.resolved_to.is_some() {
+        if opened_by_count >= 1 {
             total += 1;
         }
         if total > 6 {
@@ -1007,12 +1068,6 @@ fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> {
                 active_state_slot_hint(args.state),
             ));
         }
-    }
-    if title_count > 3 {
-        return Err(anyhow!(
-            "重复 --title 最多支持 3 个值（当前 {} 个）",
-            title_count
-        ));
     }
 
     Ok(())
@@ -1486,12 +1541,15 @@ fn render_bug_list_table(
     if result.bugs.is_empty() {
         return "没有找到 Bug\n".to_string();
     }
+    // Human table headers are Chinese (same convention as bug stats); JSON field names stay English.
     let header = format!(
-        "{} {} {} {} OPENED",
-        pad_to_display_width("ID", BUG_LIST_ID_WIDTH),
-        pad_to_display_width("STATE", BUG_LIST_STATE_WIDTH),
-        pad_to_display_width("TITLE", BUG_LIST_TITLE_WIDTH),
-        pad_to_display_width("ASSIGNEE", BUG_LIST_ASSIGNEE_WIDTH),
+        "{} {} {} {} {} {}",
+        pad_to_display_width("编号", BUG_LIST_ID_WIDTH),
+        pad_to_display_width("状态", BUG_LIST_STATE_WIDTH),
+        pad_to_display_width("创建者", BUG_LIST_OPENED_BY_WIDTH),
+        pad_to_display_width("创建日期", BUG_LIST_OPENED_DATE_WIDTH),
+        pad_to_display_width("标题", BUG_LIST_TITLE_WIDTH),
+        pad_to_display_width("指派给", BUG_LIST_ASSIGNEE_WIDTH),
     );
     let mut out = format!(
         "{}\n",
@@ -1518,12 +1576,13 @@ fn render_bug_list_table(
             title = osc8_hyperlink(&canonical_bug_url(site, bug.id), &title);
         }
         out.push_str(&format!(
-            "{} {} {} {} {}\n",
+            "{} {} {} {} {} {}\n",
             pad_to_display_width(&bug.id.to_string(), BUG_LIST_ID_WIDTH),
             state,
+            truncate_for_table(&bug.opened_by, BUG_LIST_OPENED_BY_WIDTH),
+            pad_to_display_width(bug.opened_date.trim(), BUG_LIST_OPENED_DATE_WIDTH),
             title,
             truncate_for_table(&bug.assigned_to, BUG_LIST_ASSIGNEE_WIDTH),
-            bug.opened_date.trim(),
         ));
     }
     if io::stdout().is_terminal() {

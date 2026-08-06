@@ -18,11 +18,13 @@ zentao bug list --json=id,title,state,assignee,url
 # 筛选（按需组合）
 zentao bug list --title 会议 --json=id,title,state,assignee,url
 zentao bug list -a zhousong -s active -L 100 --json=id,title,state,assignee
+zentao bug list --opened-by chenjie --opened-by niuweilong --opened-by cuiwenbo -s active --json=id,title,state,openedBy,assignee,url
 zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 --json
 zentao bug list --module 1099 --json=id,title,state
 ```
 
 - `--title` 可重复最多 3 个，OR；不是展示开关。
+- `--opened-by` 可重复最多 3 个，OR；值为用户**账号**（如 `chenjie`），列表展示的中文名不能直接当 value。
 - 状态：`active`（默认）/ `resolved` / `closed` / `all`。
 - 搜索两组各 3 槽；默认 `active` 占一槽。条件顶满且不需状态时用 `--state all`。
 - `--json` 必须用等号形式指定字段：`--json=id,title`（裸 `--json` = 全部字段）。

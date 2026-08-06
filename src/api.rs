@@ -496,7 +496,9 @@ fn summarize_login_response(raw: &str) -> String {
 /// - `"assignedTo"` → operator `=`
 /// - `"module"` → operator `belong`
 /// - `"title"` → operator `include`
-/// - `"title_or_1"` + `"title_or_2"`(+ `"title_or_3"`) → slot4~6 (`title include`, andOr=or)
+/// - `"title_or_1"` + `"title_or_2"`(+ `"title_or_3"`) → one group (`title include`, andOr=or)
+/// - `"openedBy"` → operator `=`
+/// - `"opened_by_or_1"` + `"opened_by_or_2"`(+ `"opened_by_or_3"`) → one group (`openedBy =`, andOr=or)
 /// - `"resolvedDate_from"` → operator `>=`
 /// - `"resolvedDate_to"` → operator `<=`
 /// - `"status"` → operator `=`
@@ -631,6 +633,12 @@ fn build_search_form(
     title_or_values.truncate(3);
     let use_title_or = title_or_values.len() >= 2;
 
+    let mut opened_by_or_values: Vec<String> = (1..=3)
+        .filter_map(|n| get(&format!("opened_by_or_{n}")))
+        .collect();
+    opened_by_or_values.truncate(3);
+    let use_opened_by_or = opened_by_or_values.len() >= 2;
+
     let mut set_slot = |idx: usize,
                         and_or: Option<&'static str>,
                         field: &'static str,
@@ -644,34 +652,52 @@ fn build_search_form(
         }
     };
 
-    if use_title_or {
-        // OR mode:
-        // - group1 (slot1~3): non-title filters
-        // - group2 (slot4~6): title include A [or B] [or C]
-        let mut group1: Vec<(&'static str, &'static str, String)> = Vec::new();
-        if let Some(v) = get("module") {
-            group1.push(("module", "belong", v));
-        }
-        if let Some(v) = get("assignedTo") {
-            group1.push(("assignedTo", "=", v));
-        }
-        if let Some(v) = get("resolvedBy") {
-            group1.push(("resolvedBy", "=", v));
-        }
-        if let Some(v) = get("status") {
-            group1.push(("status", "=", v));
-        }
-        if let Some(v) = get("resolvedDate_from") {
-            group1.push(("resolvedDate", ">=", v));
-        }
-        if let Some(v) = get("resolvedDate_to") {
-            group1.push(("resolvedDate", "<=", v));
-        }
+    // Shared non-OR filters (order matches historical slot filling).
+    let mut common: Vec<(&'static str, &'static str, String)> = Vec::new();
+    if let Some(v) = get("module") {
+        common.push(("module", "belong", v));
+    }
+    if let Some(v) = get("assignedTo") {
+        common.push(("assignedTo", "=", v));
+    }
+    if let Some(v) = get("openedBy") {
+        common.push(("openedBy", "=", v));
+    }
+    if let Some(v) = get("resolvedBy") {
+        common.push(("resolvedBy", "=", v));
+    }
+    if let Some(v) = get("resolvedDate_from") {
+        common.push(("resolvedDate", ">=", v));
+    }
+    if let Some(v) = get("title") {
+        common.push(("title", "include", v));
+    }
+    if let Some(v) = get("status") {
+        common.push(("status", "=", v));
+    }
+    if let Some(v) = get("resolvedDate_to") {
+        common.push(("resolvedDate", "<=", v));
+    }
 
-        for (idx, (field, operator, value)) in group1.into_iter().take(3).enumerate() {
-            set_slot(idx, None, field, operator, value);
+    if use_title_or && use_opened_by_or {
+        // Both groups used for OR: group1 openedBy, group2 title.
+        set_slot(
+            0,
+            Some("AND"),
+            "openedBy",
+            "=",
+            opened_by_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            1,
+            Some("or"),
+            "openedBy",
+            "=",
+            opened_by_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = opened_by_or_values.get(2) {
+            set_slot(2, Some("or"), "openedBy", "=", v3.clone());
         }
-
         set_slot(
             3,
             Some("AND"),
@@ -689,32 +715,63 @@ fn build_search_form(
         if let Some(v3) = title_or_values.get(2) {
             set_slot(5, Some("or"), "title", "include", v3.clone());
         }
+    } else if use_title_or {
+        // - group1 (slot1~3): non-title filters (incl. single openedBy)
+        // - group2 (slot4~6): title include A [or B] [or C]
+        let group1: Vec<_> = common
+            .into_iter()
+            .filter(|(field, _, _)| *field != "title")
+            .collect();
+        for (idx, (field, operator, value)) in group1.into_iter().take(3).enumerate() {
+            set_slot(idx, None, field, operator, value);
+        }
+        set_slot(
+            3,
+            Some("AND"),
+            "title",
+            "include",
+            title_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            4,
+            Some("or"),
+            "title",
+            "include",
+            title_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = title_or_values.get(2) {
+            set_slot(5, Some("or"), "title", "include", v3.clone());
+        }
+    } else if use_opened_by_or {
+        // - group1 (slot1~3): non-openedBy filters (incl. single title)
+        // - group2 (slot4~6): openedBy = A [or B] [or C]
+        let group1: Vec<_> = common
+            .into_iter()
+            .filter(|(field, _, _)| *field != "openedBy")
+            .collect();
+        for (idx, (field, operator, value)) in group1.into_iter().take(3).enumerate() {
+            set_slot(idx, None, field, operator, value);
+        }
+        set_slot(
+            3,
+            Some("AND"),
+            "openedBy",
+            "=",
+            opened_by_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            4,
+            Some("or"),
+            "openedBy",
+            "=",
+            opened_by_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = opened_by_or_values.get(2) {
+            set_slot(5, Some("or"), "openedBy", "=", v3.clone());
+        }
     } else {
         // Non-OR mode: deterministically fill all slots from a condition list.
-        let mut conditions: Vec<(&'static str, &'static str, String)> = Vec::new();
-        if let Some(v) = get("module") {
-            conditions.push(("module", "belong", v));
-        }
-        if let Some(v) = get("assignedTo") {
-            conditions.push(("assignedTo", "=", v));
-        }
-        if let Some(v) = get("resolvedBy") {
-            conditions.push(("resolvedBy", "=", v));
-        }
-        if let Some(v) = get("resolvedDate_from") {
-            conditions.push(("resolvedDate", ">=", v));
-        }
-        if let Some(v) = get("title") {
-            conditions.push(("title", "include", v));
-        }
-        if let Some(v) = get("status") {
-            conditions.push(("status", "=", v));
-        }
-        if let Some(v) = get("resolvedDate_to") {
-            conditions.push(("resolvedDate", "<=", v));
-        }
-
-        for (idx, (field, operator, value)) in conditions.into_iter().take(6).enumerate() {
+        for (idx, (field, operator, value)) in common.into_iter().take(6).enumerate() {
             set_slot(idx, None, field, operator, value);
         }
     }

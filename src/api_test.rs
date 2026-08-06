@@ -477,6 +477,99 @@ fn build_search_form_with_title_or_mixed_with_assigned_and_date_range() {
     assert_eq!(find("value5"), Some("线上问题"));
 }
 
+#[test]
+fn build_search_form_with_opened_by() {
+    let overrides = vec![
+        ("openedBy".to_string(), "chenjie".to_string()),
+        ("status".to_string(), "active".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("openedBy"));
+    assert_eq!(find("operator1"), Some("="));
+    assert_eq!(find("value1"), Some("chenjie"));
+    assert_eq!(find("field2"), Some("status"));
+    assert_eq!(find("operator2"), Some("="));
+    assert_eq!(find("value2"), Some("active"));
+}
+
+#[test]
+fn build_search_form_with_opened_by_or_group() {
+    let overrides = vec![
+        ("status".to_string(), "active".to_string()),
+        ("opened_by_or_1".to_string(), "chenjie".to_string()),
+        ("opened_by_or_2".to_string(), "niuweilong".to_string()),
+        ("opened_by_or_3".to_string(), "cuiwenbo".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("status"));
+    assert_eq!(find("operator1"), Some("="));
+    assert_eq!(find("value1"), Some("active"));
+
+    assert_eq!(find("groupAndOr"), Some("and"));
+    assert_eq!(find("field4"), Some("openedBy"));
+    assert_eq!(find("operator4"), Some("="));
+    assert_eq!(find("value4"), Some("chenjie"));
+    assert_eq!(find("andOr5"), Some("or"));
+    assert_eq!(find("field5"), Some("openedBy"));
+    assert_eq!(find("value5"), Some("niuweilong"));
+    assert_eq!(find("andOr6"), Some("or"));
+    assert_eq!(find("field6"), Some("openedBy"));
+    assert_eq!(find("value6"), Some("cuiwenbo"));
+}
+
+#[test]
+fn build_search_form_with_opened_by_or_and_title_or() {
+    let overrides = vec![
+        ("opened_by_or_1".to_string(), "chenjie".to_string()),
+        ("opened_by_or_2".to_string(), "niuweilong".to_string()),
+        ("title_or_1".to_string(), "系统测试".to_string()),
+        ("title_or_2".to_string(), "线上问题".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("openedBy"));
+    assert_eq!(find("value1"), Some("chenjie"));
+    assert_eq!(find("andOr2"), Some("or"));
+    assert_eq!(find("field2"), Some("openedBy"));
+    assert_eq!(find("value2"), Some("niuweilong"));
+
+    assert_eq!(find("groupAndOr"), Some("and"));
+    assert_eq!(find("field4"), Some("title"));
+    assert_eq!(find("value4"), Some("系统测试"));
+    assert_eq!(find("andOr5"), Some("or"));
+    assert_eq!(find("field5"), Some("title"));
+    assert_eq!(find("value5"), Some("线上问题"));
+}
+
 // build_search_form 应将 product_id 填入 fieldproduct。
 #[test]
 fn build_search_form_product_id() {

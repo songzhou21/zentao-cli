@@ -34,6 +34,7 @@ zentao bug list
 
 # 真实禅道筛选条件
 zentao bug list --title 会议 -a zhousong -s active -L 100
+zentao bug list --opened-by chenjie --opened-by niuweilong -s active
 zentao bug list --resolved-by zhousong \
   --resolved-from 2026-07-01 --resolved-to 2026-07-31
 
@@ -63,7 +64,7 @@ zentao bug view 57801 -o ./bug-57801.md
 zentao bug view 57801 --json=id,title,description,images,attachments
 ```
 
-`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--week` / `--month` / `--day`（解决日期快捷，与手动 from/to 互斥）、`--module`、`-s/--state`、`-L/--limit`、`--full-title` 和 `--plain`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。表格默认按显示宽度截断 TITLE；`--full-title` 仅影响人类可读表格，展示完整标题，不影响搜索条件；JSON 路径本身已是完整字段，可与 `--full-title` / `--plain` 并用（静默忽略）。
+`--json` 单独使用时输出所有字段；指定字段时必须使用等号形式，例如 `--json=id,title`，以免把位置参数误当字段。`bug list` 支持：`--title`（可重复，最多 3 个，按 OR）、`-a/--assignee`、`--opened-by`（可重复，最多 3 个，按 OR；值为禅道用户账号如 `chenjie`，不是中文显示名）、`--resolved-by`、`--resolved-from`、`--resolved-to`、`--week` / `--month` / `--day`（解决日期快捷，与手动 from/to 互斥）、`--module`、`-s/--state`、`-L/--limit`、`--full-title` 和 `--plain`。`--state` 取值为 `active`、`resolved`、`closed`、`all`。表格默认按显示宽度截断 TITLE；`--full-title` 仅影响人类可读表格，展示完整标题，不影响搜索条件；JSON 路径本身已是完整字段，可与 `--full-title` / `--plain` 并用（静默忽略）。
 
 解决日期快捷含义（按本地日历日，含首尾）：`--week` 为本周一～本周日；`--month` 为本月 1 日～月末；`--day` 为今天。三者互斥，且会写入与 `--resolved-from` / `--resolved-to` 相同的禅道 `resolvedDate` 条件。
 
