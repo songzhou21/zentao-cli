@@ -5,6 +5,7 @@ use crate::config;
 use crate::config::CookieSource;
 use crate::cookie_store;
 use crate::search;
+use crate::stats;
 use anyhow::{anyhow, Context, Result};
 use chrono::{Datelike, Duration, Local, NaiveDate, TimeZone, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -26,13 +27,6 @@ const BUG_LIST_TITLE_WIDTH: usize = 65;
 const BUG_LIST_ASSIGNEE_WIDTH: usize = 10;
 /// Fits Zentao list dates like `08-06 10:51` (no year).
 const BUG_LIST_OPENED_DATE_WIDTH: usize = 11;
-const BUG_STATS_ASSIGNEE_WIDTH: usize = 16;
-const BUG_STATS_COUNT_WIDTH: usize = 8;
-const BUG_STATS_UNASSIGNED: &str = "(未指派)";
-/// Closed bugs are not attributed to the list assignee (often the literal "Closed").
-const BUG_STATS_CLOSED_BUCKET: &str = "(已关闭)";
-const BUG_STATS_TOTAL_LABEL: &str = "合计";
-const BUG_STATS_DEFAULT_LIMIT: u32 = 1000;
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao", version, about = "在终端管理禅道 Bug")]
@@ -285,7 +279,7 @@ struct BugStatsArgs {
     #[arg(
         short = 'L',
         long,
-        default_value_t = BUG_STATS_DEFAULT_LIMIT,
+        default_value_t = stats::DEFAULT_LIMIT,
         value_parser = clap::value_parser!(u32).range(1..),
         value_name = "N"
     )]
@@ -295,7 +289,7 @@ struct BugStatsArgs {
     #[arg(long, default_value_t = false)]
     plain: bool,
 
-    /// 输出 JSON；可选指定字段：assignee,active,resolved,closed,total
+    /// 输出 JSON；可选指定字段：assignee,active,resolved,solved,closed,total
     #[arg(
         long,
         num_args = 0..=1,
@@ -452,29 +446,6 @@ fn calendar_month_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) {
             - Duration::days(1)
     };
     (start, end)
-}
-
-#[derive(Debug, Clone)]
-struct AssigneeStatsRow {
-    assignee: String,
-    active: u32,
-    resolved: u32,
-    closed: u32,
-    total: u32,
-}
-
-#[derive(Debug, Clone)]
-struct BugStatsAggregate {
-    rows: Vec<AssigneeStatsRow>,
-    total: AssigneeStatsRow,
-    sample_size: u32,
-    limit: u32,
-    incomplete: bool,
-    /// Local wall-clock time when the search sample was fetched.
-    fetched_at: String,
-    /// Effective resolvedDate range after --week/--month/--day or explicit flags.
-    resolved_from: Option<String>,
-    resolved_to: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -826,7 +797,7 @@ fn run_image(args: ImageArgs, global: &GlobalArgs) -> Result<()> {
 fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
     validate_optional_json_fields(args.json.as_deref(), LIST_JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
-    let (site_url, result) = execute_bug_search(&query, global)?;
+    let (site_url, result) = execute_bug_search(&query, global, false)?;
     if let Some(fields) = args.json.as_deref() {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
@@ -842,41 +813,38 @@ fn run_bug_list(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
                 !plain,
             )
         );
-        if let Some(line) = format_resolved_date_range_line(
+        if let Some(line) = stats::format_resolved_date_range_line(
             query.resolved_from.as_deref(),
             query.resolved_to.as_deref(),
         ) {
             let styled = !plain && ansi_enabled();
-            println!("{}", paint_stats_date_meta(&line, styled));
+            println!("{}", stats::paint_date_meta(&line, styled));
         }
     }
     Ok(())
 }
 
 fn run_bug_stats(args: BugStatsArgs, global: &GlobalArgs) -> Result<()> {
-    validate_optional_json_fields(args.json.as_deref(), STATS_JSON_FIELDS)?;
+    validate_optional_json_fields(args.json.as_deref(), stats::JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
-    let (_site_url, result) = execute_bug_search(&query, global)?;
-    let stats = aggregate_stats_by_assignee(
+    let (_site_url, result) = execute_bug_search(&query, global, true)?;
+    let report = stats::aggregate(
         &result.bugs,
         args.limit,
-        stats_fetched_at_now(),
+        stats::fetched_at_now(),
         query.resolved_from.clone(),
         query.resolved_to.clone(),
     );
-    if stats.incomplete {
-        eprintln!(
-            "{}",
-            style_warning(&format_stats_incomplete_warning(&stats))
-        );
+    if report.incomplete {
+        eprintln!("{}", style_warning(&stats::incomplete_warning(&report)));
     }
     if let Some(fields) = args.json.as_deref() {
-        let json = render_stats_json(&stats, fields)?;
+        let json = stats::render_json(&report, fields)?;
         print_json(&json)?;
     } else {
         print!(
             "{}",
-            render_bug_stats_table(&stats, !args.plain && ansi_enabled())
+            stats::render_table(&report, !args.plain && ansi_enabled())
         );
     }
     Ok(())
@@ -885,6 +853,7 @@ fn run_bug_stats(args: BugStatsArgs, global: &GlobalArgs) -> Result<()> {
 fn execute_bug_search(
     query: &BugSearchQuery,
     global: &GlobalArgs,
+    browse_json: bool,
 ) -> Result<(String, search::SearchResult)> {
     validate_search_group_limits(query)?;
 
@@ -929,7 +898,12 @@ fn execute_bug_search(
         eprintln!("[debug] 搜索结果 HTML 已写入 {debug_path}");
     }
 
-    let mut result = search::parse_search_result(&html)?;
+    let mut result = if browse_json {
+        let json_body = api_client.fetch_browse_json(&search_cookie_header, product)?;
+        search::parse_browse_json(&json_body)?
+    } else {
+        search::parse_search_result(&html)?
+    };
     apply_result_limit(&mut result, query.limit);
     Ok((site_url, result))
 }
@@ -1099,260 +1073,6 @@ fn active_state_slot_hint(state: BugState) -> &'static str {
     }
 }
 
-fn normalize_stats_assignee(raw: &str) -> String {
-    let value = raw.trim();
-    if value.is_empty() || value == "--" {
-        BUG_STATS_UNASSIGNED.to_string()
-    } else {
-        value.to_string()
-    }
-}
-
-fn empty_stats_row(assignee: impl Into<String>) -> AssigneeStatsRow {
-    AssigneeStatsRow {
-        assignee: assignee.into(),
-        active: 0,
-        resolved: 0,
-        closed: 0,
-        total: 0,
-    }
-}
-
-fn stats_fetched_at_now() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
-}
-
-fn format_resolved_date_range_line(from: Option<&str>, to: Option<&str>) -> Option<String> {
-    match (
-        from.map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(strip_resolved_time_for_date),
-        to.map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(strip_resolved_time_for_date),
-    ) {
-        (Some(from), Some(to)) => Some(format!("解决日期: {from} ~ {to}")),
-        (Some(from), None) => Some(format!("解决日期: from {from}")),
-        (None, Some(to)) => Some(format!("解决日期: to {to}")),
-        (None, None) => None,
-    }
-}
-
-fn aggregate_stats_by_assignee(
-    bugs: &[search::BugRow],
-    limit: u32,
-    fetched_at: String,
-    resolved_from: Option<String>,
-    resolved_to: Option<String>,
-) -> BugStatsAggregate {
-    // Person rows only count non-closed bugs by current assignee.
-    // Closed bugs are bucketed separately: Zentao list often shows assignee as "Closed".
-    let mut by_person: HashMap<String, AssigneeStatsRow> = HashMap::new();
-    let mut closed_bucket = empty_stats_row(BUG_STATS_CLOSED_BUCKET);
-
-    for bug in bugs {
-        match canonical_state(&bug.status) {
-            "closed" => {
-                closed_bucket.closed += 1;
-                closed_bucket.total += 1;
-            }
-            state => {
-                let key = normalize_stats_assignee(&bug.assigned_to);
-                let row = by_person
-                    .entry(key.clone())
-                    .or_insert_with(|| empty_stats_row(key));
-                row.total += 1;
-                match state {
-                    "active" => row.active += 1,
-                    "resolved" => row.resolved += 1,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let mut rows: Vec<AssigneeStatsRow> = by_person.into_values().collect();
-    // Who still has the most work: active first, then pending verification.
-    rows.sort_by(|a, b| {
-        b.active
-            .cmp(&a.active)
-            .then_with(|| b.resolved.cmp(&a.resolved))
-            .then_with(|| a.assignee.cmp(&b.assignee))
-    });
-    if closed_bucket.total > 0 {
-        rows.push(closed_bucket);
-    }
-
-    let total = AssigneeStatsRow {
-        assignee: BUG_STATS_TOTAL_LABEL.to_string(),
-        active: rows.iter().map(|r| r.active).sum(),
-        resolved: rows.iter().map(|r| r.resolved).sum(),
-        closed: rows.iter().map(|r| r.closed).sum(),
-        total: rows.iter().map(|r| r.total).sum(),
-    };
-    let sample_size = bugs.len() as u32;
-    BugStatsAggregate {
-        rows,
-        total,
-        sample_size,
-        limit,
-        incomplete: sample_size >= limit,
-        fetched_at,
-        resolved_from,
-        resolved_to,
-    }
-}
-
-fn format_stats_fetched_at_line(fetched_at: &str) -> String {
-    format!("更新时间: {fetched_at}")
-}
-
-/// Apply ANSI only when `styled` is true (caller already gates TTY / --plain / NO_COLOR).
-fn paint_stats(value: &str, code: &str, styled: bool) -> String {
-    if styled {
-        format!("\x1b[{code}m{value}\x1b[0m")
-    } else {
-        value.to_string()
-    }
-}
-
-/// Resolved-date meta line: muted blue (not bright, distinct from names/counts).
-fn paint_stats_date_meta(value: &str, styled: bool) -> String {
-    paint_stats(value, "34", styled)
-}
-
-fn style_stats_assignee_cell(assignee: &str, styled: bool) -> String {
-    let padded = pad_to_display_width(
-        &truncate_for_table(assignee, BUG_STATS_ASSIGNEE_WIDTH),
-        BUG_STATS_ASSIGNEE_WIDTH,
-    );
-    let code = if assignee == BUG_STATS_TOTAL_LABEL {
-        "1;36" // bold cyan — 合计
-    } else if assignee == BUG_STATS_CLOSED_BUCKET || assignee == BUG_STATS_UNASSIGNED {
-        "90" // dim — 系统行
-    } else {
-        "36" // cyan — 人名
-    };
-    paint_stats(&padded, code, styled)
-}
-
-fn style_stats_count_cell(value: u32, styled: bool, emphasize: bool) -> String {
-    let padded = pad_to_display_width(&value.to_string(), BUG_STATS_COUNT_WIDTH);
-    // Mid tone: normal white (readable, not flashy yellow / not dim gray).
-    let code = if emphasize { "1;37" } else { "37" };
-    paint_stats(&padded, code, styled)
-}
-
-fn append_stats_meta_lines(out: &mut String, stats: &BugStatsAggregate, styled: bool) {
-    out.push('\n');
-    if let Some(range) = format_resolved_date_range_line(
-        stats.resolved_from.as_deref(),
-        stats.resolved_to.as_deref(),
-    ) {
-        out.push_str(&paint_stats_date_meta(&range, styled));
-        out.push('\n');
-    }
-    // Slightly brighter than dim gray so the footer stays readable.
-    out.push_str(&paint_stats(
-        &format_stats_fetched_at_line(&stats.fetched_at),
-        "37",
-        styled,
-    ));
-    out.push('\n');
-}
-
-fn render_bug_stats_table(stats: &BugStatsAggregate, styled: bool) -> String {
-    if stats.sample_size == 0 {
-        let mut out = String::from("没有找到 Bug\n");
-        append_stats_meta_lines(&mut out, stats, styled);
-        return out;
-    }
-
-    let header = format!(
-        "{} {} {} {} {}",
-        pad_to_display_width("指派给", BUG_STATS_ASSIGNEE_WIDTH),
-        pad_to_display_width("激活", BUG_STATS_COUNT_WIDTH),
-        pad_to_display_width("待验证", BUG_STATS_COUNT_WIDTH),
-        pad_to_display_width("关闭", BUG_STATS_COUNT_WIDTH),
-        pad_to_display_width("合计", BUG_STATS_COUNT_WIDTH),
-    );
-    let mut out = format!(
-        "{}\n",
-        if styled {
-            style_header(&header)
-        } else {
-            header
-        }
-    );
-
-    for row in stats.rows.iter().chain(std::iter::once(&stats.total)) {
-        let emphasize = row.assignee == BUG_STATS_TOTAL_LABEL;
-        out.push_str(&format!(
-            "{} {} {} {} {}\n",
-            style_stats_assignee_cell(&row.assignee, styled),
-            style_stats_count_cell(row.active, styled, emphasize),
-            style_stats_count_cell(row.resolved, styled, emphasize),
-            style_stats_count_cell(row.closed, styled, emphasize),
-            style_stats_count_cell(row.total, styled, emphasize),
-        ));
-    }
-    append_stats_meta_lines(&mut out, stats, styled);
-    out
-}
-
-fn format_stats_incomplete_warning(stats: &BugStatsAggregate) -> String {
-    format!(
-        "warning: 样本已达 limit={}（聚合 {} 条），可能不全；请提高 -L 或收窄筛选",
-        stats.limit, stats.sample_size
-    )
-}
-
-fn render_stats_json(stats: &BugStatsAggregate, fields: &str) -> Result<Value> {
-    let fields = parse_json_fields(fields, STATS_JSON_FIELDS)?;
-    let rows: Vec<Value> = stats
-        .rows
-        .iter()
-        .map(|row| Value::Object(stats_row_json_body(row, &fields, true)))
-        .collect();
-    Ok(json!({
-        "groupBy": "assignee",
-        "sampleSize": stats.sample_size,
-        "limit": stats.limit,
-        "incomplete": stats.incomplete,
-        "fetchedAt": stats.fetched_at,
-        "resolvedFrom": stats.resolved_from,
-        "resolvedTo": stats.resolved_to,
-        "rows": rows,
-        "total": stats_row_json_body(&stats.total, &fields, false),
-    }))
-}
-
-fn stats_row_json_body(
-    row: &AssigneeStatsRow,
-    fields: &[String],
-    include_assignee: bool,
-) -> Map<String, Value> {
-    let mut out = Map::new();
-    for field in fields {
-        if field == "assignee" && !include_assignee {
-            continue;
-        }
-        out.insert(field.to_string(), stats_json_value(row, field));
-    }
-    out
-}
-
-fn stats_json_value(row: &AssigneeStatsRow, field: &str) -> Value {
-    match field {
-        "assignee" => json!(row.assignee),
-        "active" => json!(row.active),
-        "resolved" => json!(row.resolved),
-        "closed" => json!(row.closed),
-        "total" => json!(row.total),
-        _ => Value::Null,
-    }
-}
-
 fn debug_enabled() -> bool {
     std::env::var("ZENTAO_DEBUG")
         .map(|v| !matches!(v.as_str(), "" | "0" | "false" | "FALSE"))
@@ -1374,8 +1094,6 @@ const LIST_JSON_FIELDS: &[&str] = &[
     "deadline",
     "url",
 ];
-
-const STATS_JSON_FIELDS: &[&str] = &["assignee", "active", "resolved", "closed", "total"];
 
 const VIEW_JSON_FIELDS: &[&str] = &[
     "id",

@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod cookie_store;
 mod search;
+mod stats;
 
 use std::process::ExitCode;
 

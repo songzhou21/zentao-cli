@@ -10,8 +10,8 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
 - `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。
 - `bug list` 带解决日期筛选（`--week` / `--month` / `--day` / `--resolved-from` / `--resolved-to`）且未显式 `--state` 时，状态自动为 `all`（避免默认 active 与已解决日期互斥导致空结果）；显式 `-s` 仍优先生效。
-- `bug stats` 按当前 assignee 聚合状态剖面；默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。
-- `bug stats`：仅 active/resolved 按人聚合；`closed` 进 `(已关闭)`；排序激活↓再待验证↓；表头为指派给/激活/待验证/关闭/合计；无 `--full-title`，无 `--group-by`。
+- `bug stats` 默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。无 `--by`，无 `--full-title`，无通用 `--group-by`。
+- `bug stats` 先走与 list 相同的关键词搜索，再读浏览 JSON（列表 HTML 默认无 `resolvedBy`）。表头：人员 / 激活 / 待验证 / 已解决 / 关闭 / 合计。激活、待验证按当前指派给；已解决、关闭、合计按解决者。合计 = 这个人写出的全部（`resolvedBy`，含已关闭）。无解决者的关闭单进 `(未解决)`。排序合计↓再激活↓再待验证↓。JSON 字段：`assignee,active,resolved,solved,closed,total`（`resolved`=待验证，`solved`=已解决，`total`=写出的全部）。
 - `list`/`stats` 解决日期快捷：`--week`（周一～周日）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，与 `--resolved-from/to` 互斥。
 - JSON 使用 `--json[=fields]`；裸 `--json` 输出全部字段，指定字段必须使用 `--json=id,title`。
 - 列表人类表格表头为中文：编号 / 状态 / 创建者 / 创建日期（`openedDate`，非指派日期） / 标题 / 指派给；默认截断标题（显示宽度 65）；`--full-title` 仅展开表格标题为完整单行，不改变 `--title` 搜索条件，不放开指派给 / 创建者截断，与 `--json` 可并用（JSON 路径静默忽略，字段名仍为英文）。

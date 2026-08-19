@@ -169,6 +169,16 @@ impl ZentaoApi {
         Ok(body)
     }
 
+    /// Same session query as `search_bugs`, but the JSON browse view includes `resolvedBy`.
+    pub fn fetch_browse_json(&self, cookie: &str, product_id: u64) -> Result<String> {
+        let url = format!(
+            "{}/bug-browse-{}-0-bySearch-myQueryID.json",
+            self.site_url, product_id
+        );
+        let (_, body) = self.fetch_text(&url, cookie, "获取搜索结果失败")?;
+        Ok(body)
+    }
+
     pub fn debug_search_form(
         &self,
         product_id: u64,

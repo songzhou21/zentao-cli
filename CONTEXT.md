@@ -25,7 +25,7 @@ _Avoid_: Login method, credential store
 _Avoid_: Search result, report
 
 **Bug Stats**:
-在与 Bug List 相同的筛选母集上，对 active/resolved 按当前指派人聚合；closed 不归入个人（列表常显示 `Closed`），单独记入 `(已关闭)` 并计入合计。人类表头用中文；JSON 字段名仍为英文。`resolved` 表示待验证，`closed` 表示关闭。样本受 `-L/--limit` 约束，不保证全集。
+在与 Bug List 相同的筛选母集上，先搜索再读浏览 JSON。激活 / 待验证按当前指派人；已解决 / 关闭 / 合计按解决者。合计是这个人写出的全部（含已关闭），不是激活+待验证+已解决。人类表头用中文；JSON 字段名仍为英文。`resolved` 表示待验证，`solved` 表示已解决，`closed` 表示关闭，`total` 表示写出的全部。样本受 `-L/--limit` 约束，不保证全集。
 _Avoid_: Report export, dashboard, group-by engine
 
 **Active / Resolved / Closed**:

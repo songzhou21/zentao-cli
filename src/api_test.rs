@@ -778,3 +778,24 @@ fn search_bugs_follow_js_redirect_page() {
         "unexpected body: {body}"
     );
 }
+
+#[test]
+fn fetch_browse_json_requests_json_view() {
+    let plans = vec![ResponsePlan {
+        path: "/bug-browse-92-0-bySearch-myQueryID.json",
+        status: 200,
+        location: None,
+        body: r#"{"status":"success","data":"{\"bugs\":[],\"users\":{}}"}"#,
+    }];
+    let (site, seen_cookie, handle) = spawn_test_server(plans);
+    let api = ZentaoApi::new(&site).expect("api should build");
+    let got = api.fetch_browse_json("zp=test", 92);
+    handle.join().expect("server should join");
+    let sent = seen_cookie.lock().expect("lock should succeed").clone();
+    assert!(
+        sent.iter().any(|v| v == "zp=test"),
+        "cookie header not sent: {sent:?}"
+    );
+    let body = got.expect("json browse should succeed");
+    assert!(body.contains("bugs"), "unexpected body: {body}");
+}

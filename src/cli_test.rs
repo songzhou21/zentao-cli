@@ -535,195 +535,9 @@ fn bug_stats_parses_shared_filters_and_plain() {
     }
 }
 
-fn sample_bug_row(id: u64, status: &str, assigned_to: &str) -> search::BugRow {
-    search::BugRow {
-        id,
-        severity: String::new(),
-        pri: String::new(),
-        confirmed: String::new(),
-        title: format!("bug-{id}"),
-        status: status.to_string(),
-        opened_by: String::new(),
-        opened_date: String::new(),
-        assigned_to: assigned_to.to_string(),
-        resolved_date: String::new(),
-        resolution: String::new(),
-        deadline: String::new(),
-    }
-}
-
 #[test]
-fn aggregate_stats_groups_sorts_by_active_then_resolved() {
-    let bugs = vec![
-        sample_bug_row(1, "激活", "bob"),
-        sample_bug_row(2, "active", "alice"),
-        sample_bug_row(3, "已解决", "alice"),
-        sample_bug_row(4, "已关闭", "alice"),
-        sample_bug_row(5, "closed", "Closed"),
-        sample_bug_row(6, "激活", ""),
-        sample_bug_row(7, "resolved", "--"),
-        // charlie: 0 active, 3 resolved — below anyone with active
-        sample_bug_row(8, "resolved", "charlie"),
-        sample_bug_row(9, "resolved", "charlie"),
-        sample_bug_row(10, "resolved", "charlie"),
-    ];
-    let stats =
-        aggregate_stats_by_assignee(&bugs, 100, "2026-08-03 12:00:00".to_string(), None, None);
-    assert_eq!(stats.sample_size, 10);
-    assert!(!stats.incomplete);
-    assert_eq!(stats.rows.len(), 5);
-
-    // Sort: active desc, then resolved desc, then name
-    // alice/unassigned: active=1 resolved=1 (name: 未指派 before alice); bob: 1/0; charlie: 0/3
-    assert_eq!(stats.rows[0].assignee, BUG_STATS_UNASSIGNED);
-    assert_eq!(stats.rows[0].active, 1);
-    assert_eq!(stats.rows[0].resolved, 1);
-
-    assert_eq!(stats.rows[1].assignee, "alice");
-    assert_eq!(stats.rows[1].active, 1);
-    assert_eq!(stats.rows[1].resolved, 1);
-
-    assert_eq!(stats.rows[2].assignee, "bob");
-    assert_eq!(stats.rows[2].active, 1);
-    assert_eq!(stats.rows[2].resolved, 0);
-    assert_eq!(stats.rows[2].total, 1);
-
-    assert_eq!(stats.rows[3].assignee, "charlie");
-    assert_eq!(stats.rows[3].active, 0);
-    assert_eq!(stats.rows[3].resolved, 3);
-
-    assert_eq!(stats.rows[4].assignee, BUG_STATS_CLOSED_BUCKET);
-    assert_eq!(stats.rows[4].closed, 2);
-
-    assert_eq!(stats.total.active, 3);
-    assert_eq!(stats.total.resolved, 5);
-    assert_eq!(stats.total.closed, 2);
-    assert_eq!(stats.total.total, 10);
-}
-
-#[test]
-fn aggregate_stats_marks_incomplete_when_sample_hits_limit() {
-    let bugs = vec![
-        sample_bug_row(1, "active", "alice"),
-        sample_bug_row(2, "closed", "alice"),
-    ];
-    let stats =
-        aggregate_stats_by_assignee(&bugs, 2, "2026-08-03 12:00:00".to_string(), None, None);
-    assert!(stats.incomplete);
-    assert_eq!(stats.sample_size, 2);
-    assert_eq!(stats.limit, 2);
-}
-
-#[test]
-fn render_stats_json_shape_and_field_subset() {
-    let stats = aggregate_stats_by_assignee(
-        &[
-            sample_bug_row(1, "active", "alice"),
-            sample_bug_row(2, "closed", "Closed"),
-        ],
-        10,
-        "2026-08-03 12:00:00".to_string(),
-        Some("2026-08-03".into()),
-        Some("2026-08-09".into()),
-    );
-    let full = render_stats_json(&stats, "").expect("json");
-    assert_eq!(full["groupBy"], "assignee");
-    assert_eq!(full["sampleSize"], 2);
-    assert_eq!(full["limit"], 10);
-    assert_eq!(full["incomplete"], false);
-    assert_eq!(full["fetchedAt"], "2026-08-03 12:00:00");
-    assert_eq!(full["resolvedFrom"], "2026-08-03");
-    assert_eq!(full["resolvedTo"], "2026-08-09");
-    assert!(full.get("teamOpen").is_none());
-    assert_eq!(full["rows"][0]["assignee"], "alice");
-    assert_eq!(full["rows"][0]["active"], 1);
-    assert_eq!(full["rows"][0]["closed"], 0);
-    assert_eq!(full["rows"][0]["total"], 1);
-    assert!(full["rows"][0].get("openShare").is_none());
-    assert_eq!(full["rows"][1]["assignee"], BUG_STATS_CLOSED_BUCKET);
-    assert_eq!(full["rows"][1]["closed"], 1);
-    assert!(full["total"].get("assignee").is_none());
-    assert_eq!(full["total"]["active"], 1);
-    assert_eq!(full["total"]["closed"], 1);
-
-    let subset = render_stats_json(&stats, "assignee,active").expect("subset");
-    assert_eq!(
-        subset["rows"][0],
-        json!({
-            "assignee": "alice",
-            "active": 1
-        })
-    );
-    assert_eq!(subset["total"], json!({ "active": 1 }));
-    assert_eq!(subset["fetchedAt"], "2026-08-03 12:00:00");
-}
-
-#[test]
-fn render_stats_table_has_no_duplicate_incomplete_footer() {
-    let stats = aggregate_stats_by_assignee(
-        &[
-            sample_bug_row(1, "active", "alice"),
-            sample_bug_row(2, "closed", "bob"),
-        ],
-        2,
-        "2026-08-03 12:00:00".to_string(),
-        Some("2026-08-03".into()),
-        Some("2026-08-09".into()),
-    );
-    let table = render_bug_stats_table(&stats, false);
-    assert!(table.contains("指派给"));
-    assert!(table.contains("待验证"));
-    assert!(table.contains("合计"));
-    assert!(!table.contains("未关占比"));
-    assert!(!table.contains('%'));
-    assert!(table.contains("alice"));
-    assert!(table.contains(BUG_STATS_CLOSED_BUCKET));
-    assert!(!table
-        .lines()
-        .any(|line| line.contains("bob") && !line.contains(BUG_STATS_TOTAL_LABEL)));
-    assert!(table.contains(BUG_STATS_TOTAL_LABEL));
-    // resolved range + fetched time are own lines under the table
-    assert!(table.contains("\n解决日期: 2026-08-03 ~ 2026-08-09\n"));
-    assert!(table.contains("\n更新时间: 2026-08-03 12:00:00\n"));
-    let lines: Vec<&str> = table.lines().collect();
-    assert_eq!(*lines.last().unwrap(), "更新时间: 2026-08-03 12:00:00");
-    assert!(lines.contains(&"解决日期: 2026-08-03 ~ 2026-08-09"));
-    assert!(!table.contains('\x1b'), "plain/unstyled table has no ANSI");
-    assert_eq!(
-        format_resolved_date_range_line(Some("2026-08-03 00:00:00"), Some("2026-08-09 23:59:59"))
-            .as_deref(),
-        Some("解决日期: 2026-08-03 ~ 2026-08-09")
-    );
-    assert!(format_resolved_date_range_line(None, None).is_none());
-    // incomplete is stderr-only; table must not repeat the sample footer
-    assert!(!table.contains("sample:"));
-    assert!(!table.contains("incomplete"));
-    assert_eq!(
-        format_stats_incomplete_warning(&stats),
-        "warning: 样本已达 limit=2（聚合 2 条），可能不全；请提高 -L 或收窄筛选"
-    );
-
-    let colored = render_bug_stats_table(&stats, true);
-    assert!(colored.contains("\x1b[36m"), "person names use cyan");
-    assert!(colored.contains("\x1b[37m"), "counts use normal white");
-    assert!(colored.contains("\x1b[1;36m"), "TOTAL name is bold cyan");
-    assert!(
-        colored.contains("\x1b[1;37m"),
-        "TOTAL counts are bold white"
-    );
-    assert!(
-        colored.contains("\x1b[34m"),
-        "resolved date meta uses muted blue"
-    );
-    assert!(
-        colored.contains("\x1b[90m"),
-        "system rows (unassigned/closed) still dim"
-    );
-    assert!(
-        colored.contains("\x1b[37m更新时间:"),
-        "fetched-at uses readable white, not dim gray"
-    );
-    assert!(!colored.contains("\x1b[33m"), "avoid flashy yellow counts");
+fn bug_stats_rejects_by_flag() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "stats", "--by", "resolved-by"]).is_err());
 }
 
 #[test]
@@ -802,6 +616,7 @@ fn json_fields_are_selected_and_normalized() {
             opened_by: "alice".to_string(),
             opened_date: "07-31 10:00".to_string(),
             assigned_to: "bob".to_string(),
+            resolved_by: String::new(),
             resolved_date: "00-00 00:00".to_string(),
             resolution: String::new(),
             deadline: "0000-00-00".to_string(),
@@ -839,6 +654,7 @@ fn result_limit_applies_to_table_and_json() {
         opened_by: "alice".to_string(),
         opened_date: "07-31 10:00".to_string(),
         assigned_to: "bob".to_string(),
+        resolved_by: String::new(),
         resolved_date: String::new(),
         resolution: String::new(),
         deadline: String::new(),
@@ -876,6 +692,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         opened_by: "陈婕".to_string(),
         opened_date: "07-31 10:00".to_string(),
         assigned_to: "alice".to_string(),
+        resolved_by: String::new(),
         resolved_date: String::new(),
         resolution: String::new(),
         deadline: String::new(),
@@ -924,6 +741,7 @@ fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
         opened_by: "牛威龙".to_string(),
         opened_date: "07-31 16:36".to_string(),
         assigned_to: long_assignee.to_string(),
+        resolved_by: String::new(),
         resolved_date: String::new(),
         resolution: String::new(),
         deadline: String::new(),
@@ -963,6 +781,7 @@ fn bug_table_title_uses_osc8_hyperlink_when_enabled() {
         opened_by: String::new(),
         opened_date: "07-31 16:36".to_string(),
         assigned_to: "alice".to_string(),
+        resolved_by: String::new(),
         resolved_date: String::new(),
         resolution: String::new(),
         deadline: String::new(),

@@ -7,7 +7,7 @@ description: 查询和查看禅道 Bug；适用于按标题、指派人、解决
 
 用 `zentao` CLI 查禅道。**Agent 默认加 `--json`（或 `--json=fields`）读结构化输出**，不要依赖人类可读表格。
 
-入口：`bug list` / `bug view <ID|URL>` / `auth status` / `image download --url <URL>`。
+入口：`bug list` / `bug stats` / `bug view <ID|URL>` / `auth status` / `image download --url <URL>`。
 
 ## 列表
 
@@ -30,6 +30,17 @@ zentao bug list --module 1099 --json=id,title,state
 - `--json` 必须用等号形式指定字段：`--json=id,title`（裸 `--json` = 全部字段）。
 - 列表字段：`id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignee` `resolvedDate` `resolution` `deadline` `url`。
 - 日期字段保留禅道原文，可能无年份；勿补全成 ISO。
+
+## 统计
+
+```bash
+zentao bug stats --title 会议优化5.1 --json
+zentao bug stats --title 会议优化5.1 --json=assignee,active,resolved,solved,closed,total
+```
+
+- 一张表：激活 / 待验证按当前指派给；已解决 / 关闭 / 合计按解决者。合计 = 这个人写出的全部（含已关闭）。
+- 默认 `--state all`、`-L 1000`；样本制，触顶时 `incomplete` 为 `true`。无 `--by`。
+- JSON 行字段：`assignee,active,resolved,solved,closed,total`。`resolved` 为待验证，`solved` 为已解决，`total` 为写出的全部。
 
 ## 详情
 
