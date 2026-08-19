@@ -7,6 +7,7 @@
 - 优先保证回归稳定性
 - 以单元测试为主，聚焦核心规则
 - `bug view` 使用固化 HTML fixture 做解析回归
+- `bug stats` 使用固化浏览 JSON fixture（`bug-browse-…-bySearch-myQueryID.json`）做解析与聚合回归
 - 避免依赖真实禅道、真实 Chrome 环境
 
 ## 测试分层
@@ -35,6 +36,16 @@
 - `tests/fixtures/bug/bug_48919_real.html`
 - `tests/fixtures/bug/bug_missing_title.html`
 - `tests/fixtures/bug/bug_missing_desc.html`
+- `tests/fixtures/search/browse_bysearch_myqueryid.json`（`bug-browse-…-bySearch-myQueryID.json` 实抓）
+
+更新浏览 JSON fixture（需本机 Cookie 可用）：
+
+```bash
+ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_bysearch_myqueryid.json \
+  zentao bug stats --title 会议优化5.1
+```
+
+然后按新样本更新 `parses_browse_json_fixture` / `aggregate_browse_json_fixture` 中的条数断言。
 
 ## 运行方式
 

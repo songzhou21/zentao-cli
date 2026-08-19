@@ -900,6 +900,11 @@ fn execute_bug_search(
 
     let mut result = if browse_json {
         let json_body = api_client.fetch_browse_json(&search_cookie_header, product)?;
+        if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_JSON") {
+            fs::write(&debug_path, &json_body)
+                .with_context(|| format!("写入调试 JSON 失败: {debug_path}"))?;
+            eprintln!("[debug] 浏览 JSON 已写入 {debug_path}");
+        }
         search::parse_browse_json(&json_body)?
     } else {
         search::parse_search_result(&html)?

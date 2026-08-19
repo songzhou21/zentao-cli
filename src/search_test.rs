@@ -52,53 +52,43 @@ fn parses_resolved_by_html_cell() {
 }
 
 #[test]
-fn parses_browse_json_wrapper_and_maps_users() {
-    let inner = serde_json::json!({
-        "bugs": [
-            {
-                "id": "58676",
-                "title": "t1",
-                "status": "resolved",
-                "assignedTo": "niuweilong",
-                "resolvedBy": "zhousong",
-                "openedBy": "niuweilong"
-            },
-            {
-                "id": 58498,
-                "title": "t2",
-                "status": "closed",
-                "assignedTo": "closed",
-                "resolvedBy": "zhousong"
-            },
-            {
-                "id": 1,
-                "title": "t3",
-                "status": "active",
-                "assignedTo": "xiaomingming",
-                "resolvedBy": ""
-            }
-        ],
-        "users": {
-            "zhousong": "周松",
-            "niuweilong": "牛威龙",
-            "xiaomingming": "肖明明",
-            "closed": "Closed"
-        },
-        "summary": "本页共 3 个Bug"
-    });
-    let wrapped = serde_json::json!({
-        "status": "success",
-        "data": inner.to_string()
-    });
-    let result = parse_browse_json(&wrapped.to_string()).expect("parse");
-    assert_eq!(result.bugs.len(), 3);
-    assert_eq!(result.bugs[0].id, 58676);
-    assert_eq!(result.bugs[0].resolved_by, "周松");
-    assert_eq!(result.bugs[0].assigned_to, "牛威龙");
-    assert_eq!(result.bugs[1].status, "closed");
-    assert_eq!(result.bugs[1].resolved_by, "周松");
-    assert_eq!(result.bugs[2].resolved_by, "");
-    assert_eq!(result.total.as_deref(), Some("本页共 3 个Bug"));
+fn parses_browse_json_fixture() {
+    let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
+    let result = parse_browse_json(body).expect("parse");
+    assert_eq!(result.bugs.len(), 64);
+
+    let active = result
+        .bugs
+        .iter()
+        .find(|bug| bug.id == 58679)
+        .expect("active bug");
+    assert_eq!(active.status, "active");
+    assert_eq!(active.assigned_to, "肖明明");
+    assert_eq!(active.resolved_by, "");
+    assert!(active.title.contains("会议优化5.1"));
+
+    let resolved = result
+        .bugs
+        .iter()
+        .find(|bug| bug.id == 58496)
+        .expect("resolved bug");
+    assert_eq!(resolved.status, "resolved");
+    assert_eq!(resolved.assigned_to, "崔文波");
+    assert_eq!(resolved.resolved_by, "周松");
+
+    let closed = result
+        .bugs
+        .iter()
+        .find(|bug| bug.id == 58671)
+        .expect("closed bug");
+    assert_eq!(closed.status, "closed");
+    assert_eq!(closed.assigned_to, "Closed");
+    assert_eq!(closed.resolved_by, "肖会中");
+
+    assert!(result
+        .total
+        .as_deref()
+        .is_some_and(|s| s.contains("本页共") && s.contains("64")));
 }
 
 #[test]

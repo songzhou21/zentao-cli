@@ -2,6 +2,13 @@ use super::*;
 use crate::search;
 use serde_json::json;
 
+fn parse_browse_fixture() -> search::SearchResult {
+    search::parse_browse_json(include_str!(
+        "../tests/fixtures/search/browse_bysearch_myqueryid.json"
+    ))
+    .expect("browse json fixture")
+}
+
 fn sample_bug_row(id: u64, status: &str, assigned_to: &str) -> search::BugRow {
     search::BugRow {
         id,
@@ -27,74 +34,59 @@ fn sample_resolved_bug(id: u64, status: &str, resolved_by: &str) -> search::BugR
 }
 
 #[test]
-fn aggregate_mixes_assignee_workload_and_resolver_output() {
-    let bugs = vec![
-        sample_bug_row(1, "active", "肖明明"),
-        {
-            let mut bug = sample_bug_row(2, "resolved", "陈婕");
-            bug.resolved_by = "肖明明".to_string();
-            bug
-        },
-        {
-            let mut bug = sample_bug_row(3, "closed", "Closed");
-            bug.resolved_by = "肖明明".to_string();
-            bug
-        },
-        {
-            let mut bug = sample_bug_row(4, "resolved", "陈婕");
-            bug.resolved_by = "周松".to_string();
-            bug
-        },
-        {
-            let mut bug = sample_bug_row(5, "closed", "Closed");
-            bug.resolved_by = "周松".to_string();
-            bug
-        },
-        {
-            let mut bug = sample_bug_row(6, "closed", "Closed");
-            bug.resolved_by = "周松".to_string();
-            bug
-        },
-        sample_bug_row(7, "active", "肖会中"),
-        sample_bug_row(8, "closed", "Closed"),
-    ];
-    let stats = aggregate(&bugs, 100, "2026-08-03 12:00:00".to_string(), None, None);
-    assert_eq!(stats.sample_size, 8);
+fn aggregate_browse_json_fixture() {
+    let result = parse_browse_fixture();
+    let stats = aggregate(
+        &result.bugs,
+        1000,
+        "2026-08-03 12:00:00".to_string(),
+        None,
+        None,
+    );
+    assert_eq!(stats.sample_size, 64);
     assert!(!stats.incomplete);
-    assert_eq!(stats.rows.len(), 5);
 
-    assert_eq!(stats.rows[0].assignee, "周松");
-    assert_eq!(stats.rows[0].active, 0);
-    assert_eq!(stats.rows[0].resolved, 0);
-    assert_eq!(stats.rows[0].solved, 1);
-    assert_eq!(stats.rows[0].closed, 2);
-    assert_eq!(stats.rows[0].total, 3);
+    let row = |name: &str| {
+        stats
+            .rows
+            .iter()
+            .find(|row| row.assignee == name)
+            .unwrap_or_else(|| panic!("missing row {name}"))
+    };
 
-    assert_eq!(stats.rows[1].assignee, "肖明明");
-    assert_eq!(stats.rows[1].active, 1);
-    assert_eq!(stats.rows[1].resolved, 0);
-    assert_eq!(stats.rows[1].solved, 1);
-    assert_eq!(stats.rows[1].closed, 1);
-    assert_eq!(stats.rows[1].total, 2);
+    // Captured via: ZENTAO_DEBUG_JSON=... zentao bug stats --title 会议优化5.1
+    // 激活 / 待验证 by assignee; 已解决 / 关闭 / 合计 by resolvedBy.
+    assert_eq!(row("肖明明").active, 2);
+    assert_eq!(row("肖明明").solved, 3);
+    assert_eq!(row("肖明明").closed, 12);
+    assert_eq!(row("肖明明").total, 15);
 
-    assert_eq!(stats.rows[2].assignee, "肖会中");
-    assert_eq!(stats.rows[2].active, 1);
-    assert_eq!(stats.rows[2].total, 0);
+    assert_eq!(row("周松").solved, 6);
+    assert_eq!(row("周松").closed, 8);
+    assert_eq!(row("周松").total, 14);
 
-    assert_eq!(stats.rows[3].assignee, "陈婕");
-    assert_eq!(stats.rows[3].resolved, 2);
-    assert_eq!(stats.rows[3].solved, 0);
-    assert_eq!(stats.rows[3].total, 0);
+    assert_eq!(row("肖会中").solved, 3);
+    assert_eq!(row("肖会中").closed, 10);
+    assert_eq!(row("肖会中").total, 13);
 
-    assert_eq!(stats.rows[4].assignee, UNRESOLVED);
-    assert_eq!(stats.rows[4].closed, 1);
-    assert_eq!(stats.rows[4].total, 0);
+    assert_eq!(row("陈婕").resolved, 7);
+    assert_eq!(row("陈婕").total, 0);
+    assert_eq!(row("牛威龙").resolved, 6);
+    assert_eq!(row("吴昊").resolved, 3);
+    assert_eq!(row("崔文波").resolved, 1);
 
+    assert_eq!(stats.rows[0].assignee, "肖明明");
     assert_eq!(stats.total.active, 2);
-    assert_eq!(stats.total.resolved, 2);
-    assert_eq!(stats.total.solved, 2);
-    assert_eq!(stats.total.closed, 4);
-    assert_eq!(stats.total.total, 5);
+    assert_eq!(stats.total.resolved, 17);
+    assert_eq!(stats.total.solved, 17);
+    assert_eq!(stats.total.closed, 45);
+    assert_eq!(stats.total.total, 62);
+
+    let table = render_table(&stats, false);
+    assert!(table.contains(PERSON_HEADER));
+    assert!(table.contains("已解决"));
+    assert!(table.contains("肖明明"));
+    assert!(table.contains("陈婕"));
 }
 
 #[test]
