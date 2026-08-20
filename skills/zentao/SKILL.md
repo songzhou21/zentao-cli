@@ -7,7 +7,7 @@ description: 查询和查看禅道 Bug；适用于按标题、指派人、解决
 
 用 `zentao` CLI 查禅道。**Agent 默认加 `--json`（或 `--json=fields`）读结构化输出**，不要依赖人类可读表格。
 
-入口：`bug list` / `bug stats` / `bug view <ID|URL>` / `auth status` / `image download --url <URL>`。
+入口：`bug list` / `bug stats` / `bug view <ID|URL>` / `auth status`。
 
 ## 列表
 
@@ -62,11 +62,11 @@ zentao bug view 58441 --raw-json
 
 ## 排查（仅当用户要分析/修 Bug）
 
-```bash
-zentao image download --url "<image-url>" -o "/tmp/bug-<id>"
-```
+`images` / `attachments[].url` 用 curl 下载，`-o` 取 URL 最后一段。结合描述/图/日志，勿只看标题。
 
-用当前 Cookie；非 `image/*` 或登录页则失败。ZIP 日志可下到 `/tmp` 再解压。结合描述/图/日志，勿只看标题。
+```bash
+curl -L -o /tmp/bug-<id>/file-read-73844.png '<url>'
+```
 
 ## 认证失败
 

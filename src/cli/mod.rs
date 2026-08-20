@@ -1,7 +1,6 @@
 mod auth;
 mod bug;
 mod config;
-mod image;
 
 use crate::browser;
 use crate::config as app_config;
@@ -32,11 +31,6 @@ pub(crate) use bug::{
 };
 #[cfg(test)]
 pub(crate) use config::{set_config_value, ConfigKey};
-#[cfg(test)]
-pub(crate) use image::{
-    derive_site_url_from_image_url, download_single_image, resolve_output_path_from_url,
-    validate_image_url,
-};
 
 #[derive(Debug, Parser)]
 #[command(name = "zentao", version, about = "在终端管理禅道 Bug")]
@@ -62,7 +56,6 @@ pub(crate) enum Commands {
     Auth(auth::AuthArgs),
     Bug(bug::BugArgs),
     Config(config::ConfigArgs),
-    Image(image::ImageArgs),
 }
 
 #[derive(Debug)]
@@ -90,7 +83,6 @@ pub fn run(args: Vec<OsString>) -> std::result::Result<(), RunError> {
         Commands::Auth(args) => auth::run(args, &cli.global),
         Commands::Bug(args) => bug::run(args, &cli.global),
         Commands::Config(args) => config::run(args, &cli.global),
-        Commands::Image(args) => image::run(args, &cli.global),
     }
     .map_err(RunError::Runtime)
 }

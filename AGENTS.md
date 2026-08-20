@@ -9,7 +9,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 详情 JSON 字段：`id,title,priority,state,openedBy,openedDate,assignee,resolvedBy,resolvedDate,resolvedBuild,description,history,images,attachments,url`。`state` 为三态，不要 `resolution`。人员用显示名；`resolvedBuild` 用 `builds` 展示名；日期用详情接口完整时间。
 - `description` 与历史 `comment` 是去样式 HTML（留 `p` `br` `ol` `ul` `li` `img` `a`）。`images` 从描述/备注 HTML 的 `<img src>` 收集绝对地址。附件用 `files.title` + `webPath`。`history` 是事件数组（`at`/`action`/`actor`，按需 `assignee`/`changes`/`comment`）；`changes` 为 `field`+`label`+`old`+`new`。
 - `bug view --raw-json` 输出接口原始 JSON：把 `data` 从转义字符串展开成对象后再格式化。与 `--json` 互斥。
-- 不保留 `zentao search` 或 `zentao bug show` 兼容入口。
+- 不保留 `zentao search`、`zentao bug show` 或 `zentao image` 兼容入口。
 - 全局配置：`--site`、`--config`。
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
 - `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。要查已解决/关闭需显式 `-s`。
@@ -36,7 +36,6 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 ## 认证与配置
 
 - 默认 Cookie 来源为 Chrome。
-- `image download` 使用当前 Cookie，并仅写入最终响应为 `image/*` 的文件。
 - `zentao auth login` 只通过 `--password-stdin` 接收密码，禁止明文密码参数。
 - 登录写入 `~/.zentao/cookies` 后，自动把 `cookie-source` 切换为 `file`；显式 `--site` 也会保存为后续命令默认 Site。
 - `auth status` 默认隐藏 Cookie 值；只有 `--show-cookie-values` 才显示。

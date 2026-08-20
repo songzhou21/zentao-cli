@@ -5,82 +5,9 @@ use crate::search;
 use crate::view;
 use chrono::{Datelike, NaiveDate, Weekday};
 use clap::Parser;
-use reqwest::Url;
 use serde_json::json;
 use std::fs;
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use unicode_width::UnicodeWidthStr;
-
-#[derive(Clone)]
-struct ImageResponsePlan {
-    path: &'static str,
-    status: u16,
-    location: Option<&'static str>,
-    content_type: &'static str,
-    body: &'static [u8],
-}
-
-fn spawn_image_server(
-    plans: Vec<ImageResponsePlan>,
-) -> (String, Arc<Mutex<Vec<String>>>, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind should succeed");
-    let addr = listener.local_addr().expect("local addr should exist");
-    let cookies = Arc::new(Mutex::new(Vec::new()));
-    let cookies_bg = Arc::clone(&cookies);
-    let handle = thread::spawn(move || {
-        for _ in 0..plans.len() {
-            let (mut stream, _) = listener.accept().expect("accept should succeed");
-            let mut buf = [0_u8; 4096];
-            let n = stream.read(&mut buf).expect("read should succeed");
-            let request = String::from_utf8_lossy(&buf[..n]);
-            if let Some(value) = request
-                .lines()
-                .find(|line| line.to_ascii_lowercase().starts_with("cookie:"))
-                .and_then(|line| {
-                    line.split_once(':')
-                        .map(|(_, value)| value.trim().to_string())
-                })
-            {
-                cookies_bg.lock().expect("lock should succeed").push(value);
-            }
-            let path = request
-                .lines()
-                .next()
-                .and_then(|line| line.split_whitespace().nth(1))
-                .unwrap_or("/");
-            let plan = plans
-                .iter()
-                .find(|plan| plan.path == path)
-                .expect("expected request path");
-            let status_text = match plan.status {
-                200 => "OK",
-                302 => "Found",
-                _ => "Internal Server Error",
-            };
-            let mut response = format!(
-                "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
-                plan.status,
-                status_text,
-                plan.content_type,
-                plan.body.len()
-            );
-            if let Some(location) = plan.location {
-                response.push_str(&format!("Location: {location}\r\n"));
-            }
-            response.push_str("\r\n");
-            stream
-                .write_all(response.as_bytes())
-                .expect("write headers should succeed");
-            stream
-                .write_all(plan.body)
-                .expect("write body should succeed");
-        }
-    });
-    (format!("http://{addr}"), cookies, handle)
-}
 
 #[test]
 fn global_options_and_bug_list_parse() {
@@ -536,6 +463,14 @@ fn bug_stats_rejects_by_flag() {
 fn removed_search_and_bug_show_are_rejected() {
     assert!(Cli::try_parse_from(["zentao", "search"]).is_err());
     assert!(Cli::try_parse_from(["zentao", "bug", "show", "1"]).is_err());
+    assert!(Cli::try_parse_from([
+        "zentao",
+        "image",
+        "download",
+        "--url",
+        "http://example.com/a.png"
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1017,101 +952,4 @@ fn config_key_validation() {
     assert_eq!(cfg.product, Some(92));
     assert!(matches!(cfg.cookie_source, CookieSource::File));
     assert!(set_config_value(&mut cfg, ConfigKey::Product, "0").is_err());
-}
-
-#[test]
-fn image_url_validation_still_rejects_non_http() {
-    assert!(validate_image_url("https://example.com/a.png").is_ok());
-    assert!(validate_image_url("file:///tmp/a.png").is_err());
-    assert!(validate_image_url("").is_err());
-}
-
-#[test]
-fn image_download_rejects_login_html_and_accepts_images() {
-    let cases = [
-        (
-            "login redirect",
-            vec![
-                ImageResponsePlan {
-                    path: "/image.png",
-                    status: 302,
-                    location: Some("/user-login-test.html"),
-                    content_type: "text/html",
-                    body: b"",
-                },
-                ImageResponsePlan {
-                    path: "/user-login-test.html",
-                    status: 200,
-                    location: None,
-                    content_type: "text/html",
-                    body: b"<html>login</html>",
-                },
-            ],
-            false,
-        ),
-        (
-            "html response",
-            vec![ImageResponsePlan {
-                path: "/image.png",
-                status: 200,
-                location: None,
-                content_type: "text/html",
-                body: b"<html>login</html>",
-            }],
-            false,
-        ),
-        (
-            "png response",
-            vec![ImageResponsePlan {
-                path: "/image.png",
-                status: 200,
-                location: None,
-                content_type: "image/png",
-                body: b"\x89PNG\r\n",
-            }],
-            true,
-        ),
-    ];
-
-    for (_name, plans, should_succeed) in cases {
-        let (site, seen_cookies, handle) = spawn_image_server(plans);
-        let url = Url::parse(&format!("{site}/image.png")).expect("image url");
-        let dir = tempfile::tempdir().expect("temp dir");
-        let out = dir.path().join("image.png");
-        let result = download_single_image(&url, "zp=test", &out);
-
-        handle.join().expect("server should join");
-        assert!(
-            seen_cookies
-                .lock()
-                .expect("lock should succeed")
-                .iter()
-                .all(|cookie| cookie == "zp=test"),
-            "Cookie header should be sent on every request"
-        );
-        if should_succeed {
-            result.expect("image should download");
-            assert_eq!(fs::read(&out).expect("image should exist"), b"\x89PNG\r\n");
-        } else {
-            result.expect_err("non-image response should fail");
-            assert!(!out.exists(), "failed download must not create a file");
-        }
-    }
-}
-
-#[test]
-fn image_url_derives_zentao_site_for_cookie_lookup() {
-    let image = Url::parse("http://example.com/zentao/file-read-1.png").expect("url");
-    assert_eq!(
-        derive_site_url_from_image_url(&image).expect("site"),
-        "http://example.com/zentao"
-    );
-}
-
-#[test]
-fn resolve_output_path_adds_extension() {
-    let dir = tempfile::tempdir().expect("tmp");
-    let url = Url::parse("http://example.com/file-read-1").unwrap();
-    let out = resolve_output_path_from_url(dir.path(), &url);
-    assert!(out.ends_with("file-read-1.img"));
 }
