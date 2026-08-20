@@ -70,7 +70,7 @@ pub(crate) struct BugStatsArgs {
     #[arg(long, default_value_t = false)]
     pub(crate) plain: bool,
 
-    /// 输出 JSON；可选指定字段：assignee,active,resolved,solved,closed,total
+    /// 输出 JSON；可选指定字段：assignee,active,resolved,solved,closed,total（resolved 在 pending）
     #[arg(
         long,
         num_args = 0..=1,
@@ -84,7 +84,7 @@ pub(crate) struct BugStatsArgs {
 pub(crate) fn run(args: BugStatsArgs, global: &GlobalArgs) -> Result<()> {
     validate_optional_json_fields(args.json.as_deref(), stats::JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
-    let (_site_url, result) = execute_bug_search(&query, global, true)?;
+    let (_site_url, result) = execute_bug_search(&query, global)?;
     let report = stats::aggregate(
         &result.bugs,
         args.limit,

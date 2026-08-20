@@ -1,57 +1,6 @@
 use super::*;
 
 #[test]
-fn parses_search_fixture() {
-    let html = include_str!("../tests/fixtures/search/search_assigned_to_zhousong.html");
-    let result = parse_search_result(html).expect("parse");
-    assert_eq!(result.bugs.len(), 2);
-    assert_eq!(result.bugs[0].id, 51276);
-    assert_eq!(result.bugs[0].assigned_to, "用户乙");
-    assert_eq!(result.bugs[0].deadline, "0000-00-00");
-}
-
-#[test]
-fn parses_empty_search_fixture() {
-    let html = include_str!("../tests/fixtures/search/search_empty_result.html");
-    let result = parse_search_result(html).expect("parse");
-    assert!(result.bugs.is_empty());
-}
-
-#[test]
-fn missing_table_is_empty_result() {
-    let html = "<html><title>享脉企业版-Bug - 禅道</title><body></body></html>";
-    let result = parse_search_result(html).expect("parse");
-    assert!(result.bugs.is_empty());
-}
-
-#[test]
-fn rejects_login_page() {
-    let html = "<html><title>用户登录</title><body></body></html>";
-    let err = parse_search_result(html).expect_err("must reject");
-    assert!(err.to_string().contains("cookie"));
-}
-
-#[test]
-fn parses_resolved_by_html_cell() {
-    let html = r#"
-        <table id='bugList'>
-          <tbody>
-            <tr data-id='58676'>
-              <td class='c-title'>t</td>
-              <td class='c-status'><span>已解决</span></td>
-              <td class='c-assignedTo'><span title='牛威龙'>牛威龙</span></td>
-              <td class='c-resolvedBy'><span title='周松'>周松</span></td>
-            </tr>
-          </tbody>
-        </table>
-    "#;
-    let result = parse_search_result(html).expect("parse");
-    assert_eq!(result.bugs.len(), 1);
-    assert_eq!(result.bugs[0].resolved_by, "周松");
-    assert_eq!(result.bugs[0].assigned_to, "牛威龙");
-}
-
-#[test]
 fn parses_browse_json_fixture() {
     let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
     let result = parse_browse_json(body).expect("parse");
@@ -65,6 +14,9 @@ fn parses_browse_json_fixture() {
     assert_eq!(active.status, "active");
     assert_eq!(active.assigned_to, "肖明明");
     assert_eq!(active.resolved_by, "");
+    assert_eq!(active.confirmed, "1");
+    assert_eq!(active.opened_date, "2026-08-19 10:56:50");
+    assert_eq!(active.resolution, "");
     assert!(active.title.contains("会议优化5.1"));
 
     let resolved = result
@@ -75,6 +27,9 @@ fn parses_browse_json_fixture() {
     assert_eq!(resolved.status, "resolved");
     assert_eq!(resolved.assigned_to, "崔文波");
     assert_eq!(resolved.resolved_by, "周松");
+    assert_eq!(resolved.opened_date, "2026-08-14 15:31:29");
+    assert_eq!(resolved.resolved_date, "2026-08-18 10:12:35");
+    assert_eq!(resolved.resolution, "fixed");
 
     let closed = result
         .bugs
@@ -85,10 +40,53 @@ fn parses_browse_json_fixture() {
     assert_eq!(closed.assigned_to, "Closed");
     assert_eq!(closed.resolved_by, "肖会中");
 
+    assert_eq!(result.total.as_deref(), Some("本页共 64 个Bug，未解决 2。"));
+}
+
+#[test]
+fn parses_assigned_browse_json_fixture() {
+    let body = include_str!("../tests/fixtures/search/browse_assigned_to_zhousong.json");
+    let result = parse_browse_json(body).expect("parse");
+    assert_eq!(result.bugs.len(), 5);
+    assert_eq!(result.bugs[0].id, 57659);
+    assert_eq!(result.bugs[0].assigned_to, "Closed");
+    assert_eq!(result.bugs[0].resolved_by, "周松");
+    assert_eq!(result.bugs[0].opened_by, "陈婕");
+    assert_eq!(result.bugs[0].opened_date, "2026-07-28 14:56:05");
+    assert_eq!(result.bugs[0].resolved_date, "2026-07-29 10:28:21");
+    assert_eq!(result.bugs[0].resolution, "fixed");
+    assert_eq!(result.bugs[0].confirmed, "1");
+    assert_eq!(result.bugs[0].status, "closed");
+    assert!(result.bugs.iter().all(|bug| bug.resolved_by == "周松"));
     assert!(result
-        .total
-        .as_deref()
-        .is_some_and(|s| s.contains("本页共") && s.contains("64")));
+        .bugs
+        .iter()
+        .all(|bug| bug.resolved_date.starts_with("2026-07-")));
+    assert_eq!(result.total.as_deref(), Some("本页共 5 个Bug，未解决 0。"));
+}
+
+#[test]
+fn parses_empty_browse_json_fixture() {
+    let body = include_str!("../tests/fixtures/search/browse_empty.json");
+    let result = parse_browse_json(body).expect("parse");
+    assert!(result.bugs.is_empty());
+    assert_eq!(result.total.as_deref(), Some("本页共 0 个Bug，未解决 0。"));
+}
+
+#[test]
+fn browse_json_summary_strips_html_tags() {
+    let payload = serde_json::json!({
+        "status": "success",
+        "data": {
+            "bugs": [],
+            "summary": "本页共 <strong>10</strong> 个Bug，未解决 <strong>10</strong>。"
+        }
+    });
+    let result = parse_browse_json(&payload.to_string()).expect("parse");
+    assert_eq!(
+        result.total.as_deref(),
+        Some("本页共 10 个Bug，未解决 10。")
+    );
 }
 
 #[test]

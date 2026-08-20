@@ -53,13 +53,21 @@ fn aggregate_browse_json_fixture() {
             .find(|row| row.assignee == name)
             .unwrap_or_else(|| panic!("missing row {name}"))
     };
+    let pending = |name: &str| {
+        stats
+            .pending
+            .iter()
+            .find(|row| row.assignee == name)
+            .unwrap_or_else(|| panic!("missing pending {name}"))
+    };
 
     // Captured via: ZENTAO_DEBUG_JSON=... zentao bug stats --title 会议优化5.1
-    // 激活 / 待验证 by assignee; 已解决 / 关闭 / 合计 by resolvedBy.
+    // 激活按指派；已解决 / 关闭按 resolvedBy；合计 = 激活+已解决+关闭。待验证进 pending。
     assert_eq!(row("肖明明").active, 2);
     assert_eq!(row("肖明明").solved, 3);
     assert_eq!(row("肖明明").closed, 12);
-    assert_eq!(row("肖明明").total, 15);
+    assert_eq!(row("肖明明").total, 17);
+    assert!(stats.rows.iter().all(|row| row.assignee != "陈婕"));
 
     assert_eq!(row("周松").solved, 6);
     assert_eq!(row("周松").closed, 8);
@@ -69,24 +77,31 @@ fn aggregate_browse_json_fixture() {
     assert_eq!(row("肖会中").closed, 10);
     assert_eq!(row("肖会中").total, 13);
 
-    assert_eq!(row("陈婕").resolved, 7);
-    assert_eq!(row("陈婕").total, 0);
-    assert_eq!(row("牛威龙").resolved, 6);
-    assert_eq!(row("吴昊").resolved, 3);
-    assert_eq!(row("崔文波").resolved, 1);
+    assert_eq!(pending("陈婕").resolved, 7);
+    assert_eq!(pending("牛威龙").resolved, 6);
+    assert_eq!(pending("吴昊").resolved, 3);
+    assert_eq!(pending("崔文波").resolved, 1);
 
     assert_eq!(stats.rows[0].assignee, "肖明明");
     assert_eq!(stats.total.active, 2);
-    assert_eq!(stats.total.resolved, 17);
     assert_eq!(stats.total.solved, 17);
     assert_eq!(stats.total.closed, 45);
-    assert_eq!(stats.total.total, 62);
+    assert_eq!(stats.total.total, 64);
+    assert_eq!(stats.pending_total.resolved, 17);
 
     let table = render_table(&stats, false);
     assert!(table.contains(PERSON_HEADER));
     assert!(table.contains("已解决"));
+    assert!(table.contains("待验证"));
     assert!(table.contains("肖明明"));
     assert!(table.contains("陈婕"));
+    let json = render_json(&stats, "").expect("json");
+    assert!(json["rows"][0].get("resolved").is_none());
+    let pending_rows = json["pending"]["rows"].as_array().expect("pending rows");
+    assert!(pending_rows
+        .iter()
+        .any(|row| row["assignee"] == "陈婕" && row["resolved"] == 7));
+    assert_eq!(json["pending"]["total"]["resolved"], 17);
 }
 
 #[test]
@@ -124,16 +139,21 @@ fn render_json_shape_and_field_subset() {
     assert_eq!(full["rows"].as_array().map(|rows| rows.len()), Some(1));
     assert_eq!(full["rows"][0]["assignee"], "alice");
     assert_eq!(full["rows"][0]["active"], 1);
-    assert_eq!(full["rows"][0]["resolved"], 0);
+    assert!(full["rows"][0].get("resolved").is_none());
     assert_eq!(full["rows"][0]["solved"], 0);
     assert_eq!(full["rows"][0]["closed"], 1);
-    assert_eq!(full["rows"][0]["total"], 1);
+    assert_eq!(full["rows"][0]["total"], 2);
     assert!(full["rows"][0].get("openShare").is_none());
     assert!(full["total"].get("assignee").is_none());
     assert_eq!(full["total"]["active"], 1);
     assert_eq!(full["total"]["solved"], 0);
     assert_eq!(full["total"]["closed"], 1);
-    assert_eq!(full["total"]["total"], 1);
+    assert_eq!(full["total"]["total"], 2);
+    assert_eq!(
+        full["pending"]["rows"].as_array().map(|rows| rows.len()),
+        Some(0)
+    );
+    assert_eq!(full["pending"]["total"]["resolved"], 0);
 
     let subset = render_json(&stats, "assignee,active").expect("subset");
     assert_eq!(
@@ -148,7 +168,7 @@ fn render_json_shape_and_field_subset() {
 }
 
 #[test]
-fn aggregate_total_is_bugs_written_by_resolver() {
+fn aggregate_total_is_column_sum() {
     let bugs = vec![
         sample_resolved_bug(1, "closed", "周松"),
         sample_resolved_bug(2, "closed", "周松"),
@@ -171,14 +191,19 @@ fn aggregate_total_is_bugs_written_by_resolver() {
     assert_eq!(stats.rows[1].total, 2);
     assert_eq!(stats.rows[2].assignee, UNASSIGNED);
     assert_eq!(stats.rows[2].active, 1);
-    assert_eq!(stats.rows[2].total, 0);
+    assert_eq!(stats.rows[2].total, 1);
     assert_eq!(stats.total.closed, 3);
     assert_eq!(stats.total.solved, 2);
-    assert_eq!(stats.total.total, 5);
+    assert_eq!(stats.total.total, 6);
+    assert_eq!(stats.pending.len(), 1);
+    assert_eq!(stats.pending[0].assignee, UNASSIGNED);
+    assert_eq!(stats.pending[0].resolved, 2);
+    assert_eq!(stats.pending_total.resolved, 2);
 
     let table = render_table(&stats, false);
     assert!(table.contains(PERSON_HEADER));
     assert!(table.contains("已解决"));
+    assert!(table.contains("待验证"));
     assert!(!table.contains("指派给"));
     assert!(table.contains("周松"));
 
@@ -188,7 +213,8 @@ fn aggregate_total_is_bugs_written_by_resolver() {
     assert_eq!(full["rows"][0]["solved"], 1);
     assert_eq!(full["rows"][0]["closed"], 2);
     assert!(full["total"].get("assignee").is_none());
-    assert_eq!(full["total"]["total"], 5);
+    assert_eq!(full["total"]["total"], 6);
+    assert_eq!(full["pending"]["total"]["resolved"], 2);
 
     let subset = render_json(&stats, "assignee,solved,total").expect("subset");
     assert_eq!(
@@ -215,7 +241,7 @@ fn render_table_has_no_duplicate_incomplete_footer() {
     );
     let table = render_table(&stats, false);
     assert!(table.contains(PERSON_HEADER));
-    assert!(table.contains("待验证"));
+    assert!(!table.contains("待验证"));
     assert!(table.contains("已解决"));
     assert!(table.contains("合计"));
     assert!(!table.contains("未关占比"));

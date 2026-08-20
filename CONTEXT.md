@@ -21,8 +21,8 @@ CLI 读取认证会话的来源；可为 Chrome Profile 或本地 Cookie 文件�
 _Avoid_: Login method, credential store
 
 **Bug List**:
-在一个 Site 和 Product 作用域内，按禅道可验证筛选条件查询得到的 Bug 集合。
-_Avoid_: Search result, report
+在一个 Site 和 Product 作用域内，按禅道可验证筛选条件查询得到的 Bug 集合。数据来自浏览 JSON，不是列表 HTML。`--json` 用完整时间、禅道 `resolution` 代码、布尔 `confirmed` 和显示名；人类表格投影同一套 JSON 字段。
+_Avoid_: Search result, report, 列表 HTML 短日期, 中文解决方案
 
 **Bug View**:
 按 Bug ID 或详情 URL 读取单条 Bug 的详情，只以 JSON 输出。不提供人类可读的详情文档。默认打印完整 JSON；`--json=fields` 裁剪字段。状态用三态 `state`（激活 / 待验证 / 关闭），不用解决方案 `resolution`。人员字段用显示名；上线版本用展示名。创建时间、解决时间是独立字段。描述和备注正文是去掉全部样式后的 HTML 结构。图片列表从 HTML 的 `<img>` 收集。历史是事件数组，不是一篇叙述。
@@ -37,12 +37,12 @@ Bug View JSON 里的一条历史。字段为 `at`、`action`（禅道动作名�
 _Avoid_: 历史 Markdown 字符串, 中文叙述头, 把指派写进 changes, field 与中文焊成一个字符串
 
 **Opened Date**:
-Bug 的创建时间。Bug View JSON 的 `openedDate` 用详情接口的完整时间（如 `2026-08-13 12:10:03`），不是列表表格里可能省略年份的展示文本。
-_Avoid_: 从 history 字符串解析日期, 列表日期格式
+Bug 的创建时间。Bug List 用浏览 JSON、Bug View 用详情 JSON，都是完整时间（如 `2026-08-13 12:10:03`），不是列表 HTML 里省略年份的展示文本。
+_Avoid_: 从 history 字符串解析日期, 列表 HTML 短日期
 
 **Resolved Date**:
-Bug 的解决时间。Bug View JSON 的 `resolvedDate` 同样用详情接口的完整时间；未解决则为空。
-_Avoid_: 从 history 字符串解析日期, 列表日期格式
+Bug 的解决时间。Bug List / Bug View JSON 同样用接口完整时间；未解决则为空。
+_Avoid_: 从 history 字符串解析日期, 列表 HTML 短日期
 
 **Display Name**:
 禅道 `users` 对照得到的中文名，如 `周松`。Bug List / Bug View JSON 的 `openedBy`、`resolvedBy` 用显示名。筛选参数（`--opened-by`、`--resolved-by`）仍用账号。
@@ -53,8 +53,8 @@ Bug 解决时选定的上线版本。Bug View JSON 的 `resolvedBuild` 是 `buil
 _Avoid_: build ID, 构建号
 
 **Bug Stats**:
-在与 Bug List 相同的筛选母集上，先搜索再读浏览 JSON。激活 / 待验证按当前指派人；已解决 / 关闭 / 合计按解决者。合计是这个人写出的全部（含已关闭），不是激活+待验证+已解决。人类表头用中文；JSON 字段名仍为英文。`resolved` 表示待验证，`solved` 表示已解决，`closed` 表示关闭，`total` 表示写出的全部。样本受 `-L/--limit` 约束，不保证全集。
-_Avoid_: Report export, dashboard, group-by engine
+在与 Bug List 相同的筛选母集上，先提交搜索再读浏览 JSON，不刮列表页 HTML。主表：激活按当前指派人；已解决 / 关闭按解决者；合计是列加总（激活+已解决+关闭）。写出量从已解决+关闭推导。待验证单独一块（`pending`），按当前指派人、状态 `resolved`。人类表格投影同一套 JSON 字段。表头中文；JSON 字段名仍为英文。`resolved` 表示待验证，`solved` 表示已解决，`closed` 表示关闭，`total` 表示主表列加总。样本受 `-L/--limit` 约束，不保证全集。
+_Avoid_: Report export, dashboard, group-by engine, 列表 HTML
 
 **Active / Resolved / Closed**:
 禅道 Bug 状态在 CLI 中的规范值。`active` 为激活；`resolved` 为待验证（非结案）；`closed` 为关闭。

@@ -71,13 +71,19 @@ impl ZentaoApi {
         Ok(final_url)
     }
 
-    /// Build a search query and fetch the resulting bug browse page.
-    ///
-    /// The flow mirrors the browser behaviour:
-    /// 1. POST form data to `{site}/search-buildQuery.html`
-    /// 2. The server responds with a redirect to the bug browse page
-    /// 3. Follow the redirect and return the HTML body
-    pub fn search_bugs(
+    /// POST `search-buildQuery`, then read the JSON browse view.
+    /// Does not follow the search POST into the HTML table page.
+    pub fn search_browse_json(
+        &self,
+        cookie: &str,
+        product_id: u64,
+        form_params: &[(String, String)],
+    ) -> Result<String> {
+        self.submit_search_query(cookie, product_id, form_params)?;
+        self.fetch_browse_json(cookie, product_id)
+    }
+
+    fn submit_search_query(
         &self,
         cookie: &str,
         product_id: u64,
@@ -93,7 +99,6 @@ impl ZentaoApi {
             path_prefix, product_id
         );
 
-        // Build the full form body with defaults + user-provided field overrides
         let form =
             compact_search_form_for_submit(build_search_form(product_id, &action_url, form_params));
 
@@ -107,7 +112,7 @@ impl ZentaoApi {
 
         let status = resp.status();
         let final_url = resp.url().to_string();
-        let mut body = resp.text().context("读取搜索结果页面失败")?;
+        let body = resp.text().context("读取搜索结果页面失败")?;
 
         if !status.is_success() {
             return Err(anyhow!(
@@ -119,57 +124,18 @@ impl ZentaoApi {
         if final_url.contains("/user-login-") || final_url.contains("/user-login.") {
             return Err(anyhow!("搜索失败: cookie 无效或已过期"));
         }
-
-        // Some Zentao responses return a tiny JS bridge page:
-        // <script>parent.location='/zentao/bug-browse-...';</script>
-        // Follow it to fetch the actual bug table HTML.
         if let Some(redirect) = extract_js_redirect(&body) {
-            // Check for JS redirect to login page before following
             if redirect.contains("/user-login-") || redirect.contains("/user-login.") {
                 return Err(anyhow!("搜索失败: cookie 无效或已过期"));
             }
-            let redirect_url =
-                if redirect.starts_with("http://") || redirect.starts_with("https://") {
-                    redirect
-                } else {
-                    let base = reqwest::Url::parse(&format!("{}/", self.site_url))
-                        .context("解析站点 URL 失败")?;
-                    base.join(&redirect)
-                        .map(|u| u.to_string())
-                        .with_context(|| format!("拼接搜索跳转地址失败: {}", redirect))?
-                };
-
-            let resp2 = self
-                .client
-                .get(&redirect_url)
-                .header("Cookie", cookie)
-                .send()
-                .with_context(|| format!("请求搜索跳转页面失败: {}", redirect_url))?;
-
-            let status2 = resp2.status();
-            let final_url2 = resp2.url().to_string();
-            body = resp2.text().context("读取搜索跳转页面失败")?;
-
-            if !status2.is_success() {
-                return Err(anyhow!(
-                    "搜索失败: HTTP {} ({})",
-                    status2.as_u16(),
-                    final_url2
-                ));
-            }
-            if final_url2.contains("/user-login-") || final_url2.contains("/user-login.") {
-                return Err(anyhow!("搜索失败: cookie 无效或已过期"));
-            }
         }
-
         if body.trim().is_empty() {
             return Err(anyhow!("搜索失败: 页面内容为空"));
         }
-
         Ok(body)
     }
 
-    /// Same session query as `search_bugs`, but the JSON browse view includes `resolvedBy`.
+    /// JSON browse view for the current `myQueryID` session. Includes `resolvedBy`.
     pub fn fetch_browse_json(&self, cookie: &str, product_id: u64) -> Result<String> {
         let url = format!(
             "{}/bug-browse-{}-0-bySearch-myQueryID.json",
@@ -196,12 +162,6 @@ impl ZentaoApi {
             &action_url,
             form_params,
         )))
-    }
-
-    #[cfg(test)]
-    pub fn fetch_bug_html(&self, bug_url: &str, cookie: &str) -> Result<(String, String)> {
-        let (final_url, body) = self.fetch_text(bug_url, cookie, "获取 bug 详情失败")?;
-        Ok((final_url, body))
     }
 
     pub fn fetch_bug_json(&self, bug_url: &str, cookie: &str) -> Result<(String, String)> {

@@ -655,25 +655,25 @@ fn set_form_value_nonexistent_key_is_noop() {
     assert_eq!(form[0].1, "val");
 }
 
-// FetchBugHTML 应覆盖成功、空页面、登录跳转和 HTTP 非 2xx。
+// FetchBugJSON 应覆盖成功、空页面、登录跳转和 HTTP 非 2xx。
 #[test]
-fn fetch_bug_html_table_cases() {
+fn fetch_bug_json_table_cases() {
     let cases = [
         (
             "success",
             vec![ResponsePlan {
-                path: "/bug-view-51214.html",
+                path: "/bug-view-51214.json",
                 status: 200,
                 location: None,
-                body: "<html><body>ok</body></html>",
+                body: r#"{"status":"success","data":"{\"bug\":{\"id\":\"51214\"}}"}"#,
             }],
             "",
-            "ok",
+            "51214",
         ),
         (
             "empty body",
             vec![ResponsePlan {
-                path: "/bug-view-51214.html",
+                path: "/bug-view-51214.json",
                 status: 200,
                 location: None,
                 body: "   ",
@@ -685,7 +685,7 @@ fn fetch_bug_html_table_cases() {
             "login redirect",
             vec![
                 ResponsePlan {
-                    path: "/bug-view-51214.html",
+                    path: "/bug-view-51214.json",
                     status: 302,
                     location: Some("/user-login-abc.html"),
                     body: "",
@@ -703,7 +703,7 @@ fn fetch_bug_html_table_cases() {
         (
             "http non 2xx",
             vec![ResponsePlan {
-                path: "/bug-view-51214.html",
+                path: "/bug-view-51214.json",
                 status: 403,
                 location: None,
                 body: "forbidden",
@@ -716,7 +716,7 @@ fn fetch_bug_html_table_cases() {
     for (_name, plans, want_err, want_body_contains) in cases {
         let (site, seen_cookie, handle) = spawn_test_server(plans);
         let api = ZentaoApi::new(&site).expect("api should build");
-        let got = api.fetch_bug_html(&format!("{site}/bug-view-51214.html"), "zp=test");
+        let got = api.fetch_bug_json(&format!("{site}/bug-view-51214.html"), "zp=test");
 
         handle.join().expect("server should join");
         let sent = seen_cookie.lock().expect("lock should succeed").clone();
@@ -736,47 +736,11 @@ fn fetch_bug_html_table_cases() {
 
         let (final_url, body) = got.expect("should succeed");
         assert!(
-            final_url.contains("/bug-view-51214.html"),
+            final_url.contains("/bug-view-51214.json"),
             "unexpected final url: {final_url}"
         );
         assert!(body.contains(want_body_contains), "unexpected body: {body}");
     }
-}
-
-// SearchBugs 遇到 JS 跳转页时应跟随 parent.location 获取真实列表页面。
-#[test]
-fn search_bugs_follow_js_redirect_page() {
-    let plans = vec![
-        ResponsePlan {
-            path: "/search-buildQuery.html",
-            status: 200,
-            location: None,
-            body: "<html><script>parent.location='/bug-browse-92-0-bySearch-myQueryID.html';</script></html>",
-        },
-        ResponsePlan {
-            path: "/bug-browse-92-0-bySearch-myQueryID.html",
-            status: 200,
-            location: None,
-            body: "<html><table id='bugList'><tbody><tr data-id='51276'><td class='c-title'>ok</td></tr></tbody></table></html>",
-        },
-    ];
-
-    let (site, seen_cookie, handle) = spawn_test_server(plans);
-    let api = ZentaoApi::new(&site).expect("api should build");
-    let got = api.search_bugs("zp=test", 92, &[]);
-
-    handle.join().expect("server should join");
-    let sent = seen_cookie.lock().expect("lock should succeed").clone();
-    assert!(
-        sent.iter().any(|v| v == "zp=test"),
-        "cookie header not sent: {sent:?}"
-    );
-
-    let body = got.expect("search should succeed");
-    assert!(
-        body.contains("bugList") && body.contains("51276"),
-        "unexpected body: {body}"
-    );
 }
 
 #[test]
@@ -798,6 +762,35 @@ fn fetch_bug_json_requests_json_view() {
     );
     let (_, body) = got.expect("json view should succeed");
     assert!(body.contains("58688"), "unexpected body: {body}");
+}
+
+#[test]
+fn search_browse_json_skips_html_table_page() {
+    let plans = vec![
+        ResponsePlan {
+            path: "/search-buildQuery.html",
+            status: 200,
+            location: None,
+            body: "<html><script>parent.location='/bug-browse-92-0-bySearch-myQueryID.html';</script></html>",
+        },
+        ResponsePlan {
+            path: "/bug-browse-92-0-bySearch-myQueryID.json",
+            status: 200,
+            location: None,
+            body: r#"{"status":"success","data":"{\"bugs\":[],\"users\":{}}"}"#,
+        },
+    ];
+    let (site, seen_cookie, handle) = spawn_test_server(plans);
+    let api = ZentaoApi::new(&site).expect("api should build");
+    let got = api.search_browse_json("zp=test", 92, &[]);
+    handle.join().expect("server should join");
+    let sent = seen_cookie.lock().expect("lock should succeed").clone();
+    assert!(
+        sent.iter().any(|v| v == "zp=test"),
+        "cookie header not sent: {sent:?}"
+    );
+    let body = got.expect("json search should succeed without HTML table");
+    assert!(body.contains("bugs"), "unexpected body: {body}");
 }
 
 #[test]

@@ -12,17 +12,26 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 不保留 `zentao search` 或 `zentao bug show` 兼容入口。
 - 全局配置：`--site`、`--config`。
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
-- `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。
-- `bug list` 带解决日期筛选（`--week` / `--month` / `--day` / `--resolved-from` / `--resolved-to`）且未显式 `--state` 时，状态自动为 `all`（避免默认 active 与已解决日期互斥导致空结果）；显式 `-s` 仍优先生效。
+- `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。要查已解决/关闭需显式 `-s`。
 - `bug stats` 默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。无 `--by`，无 `--full-title`，无通用 `--group-by`。
-- `bug stats` 先走与 list 相同的关键词搜索，再读浏览 JSON（列表 HTML 默认无 `resolvedBy`）。表头：人员 / 激活 / 待验证 / 已解决 / 关闭 / 合计。激活、待验证按当前指派给；已解决、关闭、合计按解决者。合计 = 这个人写出的全部（`resolvedBy`，含已关闭）。无解决者的关闭单进 `(未解决)`。排序合计↓再激活↓再待验证↓。JSON 字段：`assignee,active,resolved,solved,closed,total`（`resolved`=待验证，`solved`=已解决，`total`=写出的全部）。
+- `bug list` / `bug stats` 都先 POST 与 list 相同的关键词搜索（`search-buildQuery.html`），再读浏览 JSON；不拉、不解析列表 HTML。
+- `bug stats` 两张表。主表：人员 / 激活 / 已解决 / 关闭 / 合计。激活按当前指派给；已解决 / 关闭按解决者；合计 = 激活+已解决+关闭（列加总）。写出量 = 已解决+关闭。无解决者的关闭单进 `(未解决)`。排序合计↓再激活↓再已解决↓。待验证单独一张表（当前指派且状态 `resolved`），空则不输出。JSON：`rows` 为 `assignee,active,solved,closed,total`；`pending.rows` 为 `assignee,resolved`（`resolved`=待验证）。
 - `list`/`stats` 解决日期快捷：`--week`（周一～周日）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，与 `--resolved-from/to` 互斥。
 - JSON 使用 `--json[=fields]`；裸 `--json` 输出全部字段，指定字段必须使用 `--json=id,title`。
-- 列表人类表格表头为中文：编号 / 状态 / 创建者 / 创建日期（`openedDate`，非指派日期） / 标题 / 指派给；默认截断标题（显示宽度 65）；`--full-title` 仅展开表格标题为完整单行，不改变 `--title` 搜索条件，不放开指派给 / 创建者截断，与 `--json` 可并用（JSON 路径静默忽略，字段名仍为英文）。
+- 列表 JSON 日期为浏览接口完整时间（如 `2026-08-20 11:30:31`）；`resolution` 为禅道代码（如 `fixed`）；`confirmed` 为布尔（`"1"` → true，其余为 false）；人员用显示名；含 `resolvedBy`（显示名，未解决为 `null`）。
+- 列表表头为中文：编号 / 状态 / 创建者 / 创建日期（`openedDate` 完整时间，非指派日期） / 标题 / 指派给；默认截断标题（显示宽度 65）；`--full-title` 仅展开表格标题为完整单行，不改变 `--title` 搜索条件，不放开指派给 / 创建者截断，与 `--json` 可并用（JSON 路径静默忽略）。
 - 列表表格在 stdout 为 TTY 时，TITLE 默认包 OSC 8 超链接（目标与 JSON `url` 相同的 `bug-view-<id>.html`）；可见文本不变、不加下划线/变色；管道/重定向不输出 OSC；不跟 `NO_COLOR` 绑死。
 - `--plain` 关闭表格交互装饰（OSC 8 超链接、表头/状态颜色），输出纯文本；可与 `--full-title` 并用；`--json` 路径静默忽略。
-- 列表 JSON 日期保留禅道原始展示文本，可能省略年份；不要推断或伪造完整日期。
 - 仅暴露经验证的禅道字段；不提供模拟 GitHub 查询语法的 `--search`。
+
+## 开发规范
+
+- 凡有结构化输出的命令，先做 `--json` API；人类可读再投影同一份字段，不要另算列或另做一套数据。
+- 表头中文，字段名仍英文。无人类表格的命令（如 `bug view`）只出 JSON。
+
+## 技能文档
+
+- `skills/zentao/SKILL.md` 只写用法（命令、参数、字段含义），不写实现细节（请求路径、HTML/JSON 刮取、内部数据源）。
 
 ## 认证与配置
 
@@ -39,7 +48,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 重复 `--title` 最多三个值，按 OR；可与最多三个非标题条件组合。
 - 重复 `--opened-by` 最多三个值（用户账号，非中文显示名），按 OR；可与最多三个非创建者条件组合。
 - 同时重复 `--title` 与 `--opened-by` 时两组槽位都被 OR 占满，不能再叠加其他筛选（含默认 `active` 状态，需 `--state all`）。
-- 默认 `--state active` 也占用一个条件槽位；不需状态筛选时使用 `--state all` 释放该槽位（list 在仅有解决日期条件时会自动用 `all`，不占状态槽）。
+- 默认 `--state active` 也占用一个条件槽位；不需状态筛选时使用 `--state all` 释放该槽位。
 - 不要重新加入标题前缀“模块分组”：它不是禅道模块字段。
 
 ## 测试

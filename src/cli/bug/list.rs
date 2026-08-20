@@ -17,8 +17,8 @@ const BUG_LIST_STATE_WIDTH: usize = 9;
 const BUG_LIST_OPENED_BY_WIDTH: usize = 10;
 const BUG_LIST_TITLE_WIDTH: usize = 65;
 const BUG_LIST_ASSIGNEE_WIDTH: usize = 10;
-/// Fits Zentao list dates like `08-06 10:51` (no year).
-const BUG_LIST_OPENED_DATE_WIDTH: usize = 11;
+/// Fits browse-JSON timestamps like `2026-08-20 11:30:31`.
+const BUG_LIST_OPENED_DATE_WIDTH: usize = 19;
 
 pub(crate) const LIST_JSON_FIELDS: &[&str] = &[
     "id",
@@ -30,6 +30,7 @@ pub(crate) const LIST_JSON_FIELDS: &[&str] = &[
     "openedBy",
     "openedDate",
     "assignee",
+    "resolvedBy",
     "resolvedDate",
     "resolution",
     "deadline",
@@ -78,9 +79,9 @@ pub(crate) struct BugListArgs {
     #[arg(long, value_name = "MODULE_ID")]
     pub(crate) module: Option<String>,
 
-    /// Bug 状态；默认 active。带解决日期筛选且未显式指定时改为 all
-    #[arg(short = 's', long, value_enum, value_name = "STATE")]
-    pub(crate) state: Option<BugState>,
+    /// Bug 状态；默认 active
+    #[arg(short = 's', long, value_enum, value_name = "STATE", default_value_t = BugState::Active)]
+    pub(crate) state: BugState,
 
     /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
     #[arg(long, env = "ZENTAO_PRODUCT", value_name = "ID")]
@@ -104,7 +105,7 @@ pub(crate) struct BugListArgs {
     #[arg(long, default_value_t = false)]
     pub(crate) plain: bool,
 
-    /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignee,resolvedDate,resolution,deadline,url
+    /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignee,resolvedBy,resolvedDate,resolution,deadline,url
     #[arg(
         long,
         num_args = 0..=1,
@@ -118,7 +119,7 @@ pub(crate) struct BugListArgs {
 pub(crate) fn run(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
     validate_optional_json_fields(args.json.as_deref(), LIST_JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
-    let (site_url, result) = execute_bug_search(&query, global, false)?;
+    let (site_url, result) = execute_bug_search(&query, global)?;
     if let Some(fields) = args.json.as_deref() {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
@@ -240,10 +241,11 @@ fn list_json_value(bug: &search::BugRow, field: &str, site: &str) -> Value {
         "state" => json!(canonical_state(&bug.status)),
         "severity" => json!(bug.severity.parse::<u8>().ok()),
         "priority" => json!(bug.pri.parse::<u8>().ok()),
-        "confirmed" => json!(bug.confirmed.trim() == "是"),
+        "confirmed" => json!(is_confirmed(&bug.confirmed)),
         "openedBy" => nullable_text(&bug.opened_by),
         "openedDate" => nullable_date(&bug.opened_date),
         "assignee" => nullable_text(&bug.assigned_to),
+        "resolvedBy" => nullable_text(&bug.resolved_by),
         "resolvedDate" => nullable_date(&bug.resolved_date),
         "resolution" => nullable_text(&bug.resolution),
         "deadline" => nullable_date(&bug.deadline),
@@ -273,6 +275,10 @@ fn nullable_date(raw: &str) -> Value {
     } else {
         json!(value)
     }
+}
+
+fn is_confirmed(raw: &str) -> bool {
+    raw.trim() == "1"
 }
 
 fn canonical_state(raw: &str) -> &'static str {

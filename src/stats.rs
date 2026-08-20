@@ -9,6 +9,8 @@ pub(crate) const DEFAULT_LIMIT: u32 = 1000;
 pub(crate) const JSON_FIELDS: &[&str] = &[
     "assignee", "active", "resolved", "solved", "closed", "total",
 ];
+const MAIN_JSON_FIELDS: &[&str] = &["assignee", "active", "solved", "closed", "total"];
+const PENDING_JSON_FIELDS: &[&str] = &["assignee", "resolved"];
 
 const PERSON_WIDTH: usize = 16;
 const COUNT_WIDTH: usize = 8;
@@ -32,6 +34,9 @@ pub(crate) struct PersonRow {
 pub(crate) struct BugStats {
     pub rows: Vec<PersonRow>,
     pub total: PersonRow,
+    /// 待验证：状态 `resolved`，按当前指派给。
+    pub pending: Vec<PersonRow>,
+    pub pending_total: PersonRow,
     pub sample_size: u32,
     pub limit: u32,
     pub incomplete: bool,
@@ -77,7 +82,8 @@ pub(crate) fn incomplete_warning(stats: &BugStats) -> String {
     )
 }
 
-/// 激活 / 待验证: current assignee. 已解决 / 关闭 / 合计: resolver (写出的全部).
+/// 主表：激活按当前指派；已解决 / 关闭按解决者；合计 = 激活+已解决+关闭。
+/// 待验证单独进 `pending`（当前指派且状态 resolved）。
 pub(crate) fn aggregate(
     bugs: &[BugRow],
     limit: u32,
@@ -86,18 +92,18 @@ pub(crate) fn aggregate(
     resolved_to: Option<String>,
 ) -> BugStats {
     let mut by_person: HashMap<String, PersonRow> = HashMap::new();
+    let mut by_pending: HashMap<String, PersonRow> = HashMap::new();
 
     for bug in bugs {
         let state = canonical_state(&bug.status);
         match state {
-            "active" | "resolved" => {
+            "active" => {
                 let key = normalize_assignee(&bug.assigned_to);
-                let row = person_row(&mut by_person, &key);
-                if state == "active" {
-                    row.active += 1;
-                } else {
-                    row.resolved += 1;
-                }
+                person_row(&mut by_person, &key).active += 1;
+            }
+            "resolved" => {
+                let key = normalize_assignee(&bug.assigned_to);
+                person_row(&mut by_pending, &key).resolved += 1;
             }
             _ => {}
         }
@@ -105,7 +111,6 @@ pub(crate) fn aggregate(
         let resolver = bug.resolved_by.trim();
         if !resolver.is_empty() && resolver != "--" {
             let row = person_row(&mut by_person, resolver);
-            row.total += 1;
             match state {
                 "resolved" => row.solved += 1,
                 "closed" => row.closed += 1,
@@ -116,18 +121,24 @@ pub(crate) fn aggregate(
         }
     }
 
-    let mut rows: Vec<PersonRow> = by_person.into_values().collect();
-    // Who wrote the most first; then remaining workload.
+    let mut rows: Vec<PersonRow> = by_person.into_values().map(with_column_total).collect();
     rows.sort_by(|a, b| {
         b.total
             .cmp(&a.total)
             .then_with(|| b.active.cmp(&a.active))
-            .then_with(|| b.resolved.cmp(&a.resolved))
+            .then_with(|| b.solved.cmp(&a.solved))
+            .then_with(|| a.assignee.cmp(&b.assignee))
+    });
+    let mut pending: Vec<PersonRow> = by_pending.into_values().collect();
+    pending.sort_by(|a, b| {
+        b.resolved
+            .cmp(&a.resolved)
             .then_with(|| a.assignee.cmp(&b.assignee))
     });
 
     finish(
         rows,
+        pending,
         bugs.len() as u32,
         limit,
         fetched_at,
@@ -143,35 +154,33 @@ pub(crate) fn render_table(stats: &BugStats, styled: bool) -> String {
         return out;
     }
 
-    let header = format!(
-        "{} {} {} {} {} {}",
-        pad(PERSON_HEADER, PERSON_WIDTH),
-        pad("激活", COUNT_WIDTH),
-        pad("待验证", COUNT_WIDTH),
-        pad("已解决", COUNT_WIDTH),
-        pad("关闭", COUNT_WIDTH),
-        pad("合计", COUNT_WIDTH),
-    );
-    let mut out = format!(
-        "{}\n",
-        if styled {
-            paint(&header, "1", true)
-        } else {
-            header
+    let mut out = String::new();
+    if !stats.rows.is_empty() {
+        append_table(
+            &mut out,
+            &[PERSON_HEADER, "激活", "已解决", "关闭", "合计"],
+            stats.rows.iter().chain(std::iter::once(&stats.total)),
+            |row| vec![row.active, row.solved, row.closed, row.total],
+            styled,
+        );
+    }
+    if !stats.pending.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
         }
-    );
-
-    for row in stats.rows.iter().chain(std::iter::once(&stats.total)) {
-        let emphasize = row.assignee == TOTAL_LABEL;
-        out.push_str(&format!(
-            "{} {} {} {} {} {}\n",
-            style_person_cell(&row.assignee, styled),
-            style_count_cell(row.active, styled, emphasize),
-            style_count_cell(row.resolved, styled, emphasize),
-            style_count_cell(row.solved, styled, emphasize),
-            style_count_cell(row.closed, styled, emphasize),
-            style_count_cell(row.total, styled, emphasize),
-        ));
+        append_table(
+            &mut out,
+            &[PERSON_HEADER, "待验证"],
+            stats
+                .pending
+                .iter()
+                .chain(std::iter::once(&stats.pending_total)),
+            |row| vec![row.resolved],
+            styled,
+        );
+    }
+    if out.is_empty() {
+        out.push_str("没有找到 Bug\n");
     }
     append_meta_lines(&mut out, stats, styled);
     out
@@ -180,10 +189,17 @@ pub(crate) fn render_table(stats: &BugStats, styled: bool) -> String {
 pub(crate) fn render_json(stats: &BugStats, fields: &str) -> Result<Value> {
     let fields = parse_json_fields(fields, JSON_FIELDS)?;
     let person_field = "assignee";
+    let main_fields = intersect_fields(&fields, MAIN_JSON_FIELDS);
+    let pending_fields = intersect_fields(&fields, PENDING_JSON_FIELDS);
     let rows: Vec<Value> = stats
         .rows
         .iter()
-        .map(|row| Value::Object(row_json(row, &fields, true, person_field)))
+        .map(|row| Value::Object(row_json(row, &main_fields, true, person_field)))
+        .collect();
+    let pending_rows: Vec<Value> = stats
+        .pending
+        .iter()
+        .map(|row| Value::Object(row_json(row, &pending_fields, true, person_field)))
         .collect();
     Ok(json!({
         "groupBy": person_field,
@@ -194,7 +210,11 @@ pub(crate) fn render_json(stats: &BugStats, fields: &str) -> Result<Value> {
         "resolvedFrom": stats.resolved_from,
         "resolvedTo": stats.resolved_to,
         "rows": rows,
-        "total": row_json(&stats.total, &fields, false, person_field),
+        "total": row_json(&stats.total, &main_fields, false, person_field),
+        "pending": {
+            "rows": pending_rows,
+            "total": row_json(&stats.pending_total, &pending_fields, false, person_field),
+        },
     }))
 }
 
@@ -225,29 +245,79 @@ fn normalize_assignee(raw: &str) -> String {
 
 fn finish(
     rows: Vec<PersonRow>,
+    pending: Vec<PersonRow>,
     sample_size: u32,
     limit: u32,
     fetched_at: String,
     resolved_from: Option<String>,
     resolved_to: Option<String>,
 ) -> BugStats {
-    let total = PersonRow {
-        assignee: TOTAL_LABEL.to_string(),
-        active: rows.iter().map(|r| r.active).sum(),
-        resolved: rows.iter().map(|r| r.resolved).sum(),
-        solved: rows.iter().map(|r| r.solved).sum(),
-        closed: rows.iter().map(|r| r.closed).sum(),
-        total: rows.iter().map(|r| r.total).sum(),
-    };
+    let total = with_column_total(sum_rows(&rows));
+    let pending_total = sum_rows(&pending);
     BugStats {
         rows,
         total,
+        pending,
+        pending_total,
         sample_size,
         limit,
         incomplete: sample_size >= limit,
         fetched_at,
         resolved_from,
         resolved_to,
+    }
+}
+
+fn with_column_total(mut row: PersonRow) -> PersonRow {
+    row.total = row.active + row.solved + row.closed;
+    row
+}
+
+fn sum_rows(rows: &[PersonRow]) -> PersonRow {
+    PersonRow {
+        assignee: TOTAL_LABEL.to_string(),
+        active: rows.iter().map(|r| r.active).sum(),
+        resolved: rows.iter().map(|r| r.resolved).sum(),
+        solved: rows.iter().map(|r| r.solved).sum(),
+        closed: rows.iter().map(|r| r.closed).sum(),
+        total: rows.iter().map(|r| r.total).sum(),
+    }
+}
+
+fn intersect_fields(fields: &[String], allowed: &[&str]) -> Vec<String> {
+    fields
+        .iter()
+        .filter(|field| allowed.contains(&field.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn append_table<'a, I, F>(out: &mut String, titles: &[&str], rows: I, counts: F, styled: bool)
+where
+    I: Iterator<Item = &'a PersonRow>,
+    F: Fn(&PersonRow) -> Vec<u32>,
+{
+    let header = titles
+        .iter()
+        .enumerate()
+        .map(|(i, title)| pad(title, if i == 0 { PERSON_WIDTH } else { COUNT_WIDTH }))
+        .collect::<Vec<_>>()
+        .join(" ");
+    out.push_str(&if styled {
+        paint(&header, "1", true)
+    } else {
+        header
+    });
+    out.push('\n');
+    for row in rows {
+        let emphasize = row.assignee == TOTAL_LABEL;
+        let mut line = style_person_cell(&row.assignee, styled);
+        for value in counts(row) {
+            line.push(' ');
+            line.push_str(&style_count_cell(value, styled, emphasize));
+        }
+        out.push_str(&line);
+        out.push('\n');
     }
 }
 

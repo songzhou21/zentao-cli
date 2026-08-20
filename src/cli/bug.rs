@@ -71,7 +71,6 @@ impl From<&list::BugListArgs> for BugSearchQuery {
             args.resolved_to.clone(),
             Local::now().date_naive(),
         );
-        let state = resolve_list_bug_state(args.state, &resolved_from, &resolved_to);
         Self {
             title: args.title.clone(),
             assignee: args.assignee.clone(),
@@ -80,7 +79,7 @@ impl From<&list::BugListArgs> for BugSearchQuery {
             resolved_from,
             resolved_to,
             module: args.module.clone(),
-            state,
+            state: args.state,
             product: args.product,
             limit: args.limit,
         }
@@ -117,23 +116,6 @@ pub(crate) fn run(args: BugArgs, global: &GlobalArgs) -> Result<()> {
         BugSubCommands::List(args) => list::run(args, global),
         BugSubCommands::Stats(args) => stats::run(args, global),
         BugSubCommands::View(args) => view::run(args, global),
-    }
-}
-
-/// Default list state is active; resolved-date filters default to all so the
-/// date range is not wiped out by the active-only default.
-fn resolve_list_bug_state(
-    explicit: Option<BugState>,
-    resolved_from: &Option<String>,
-    resolved_to: &Option<String>,
-) -> BugState {
-    if let Some(state) = explicit {
-        return state;
-    }
-    if resolved_from.is_some() || resolved_to.is_some() {
-        BugState::All
-    } else {
-        BugState::Active
     }
 }
 
@@ -197,7 +179,6 @@ pub(crate) fn calendar_month_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) 
 pub(crate) fn execute_bug_search(
     query: &BugSearchQuery,
     global: &GlobalArgs,
-    browse_json: bool,
 ) -> Result<(String, search::SearchResult)> {
     validate_search_group_limits(query)?;
 
@@ -234,25 +215,13 @@ pub(crate) fn execute_bug_search(
         eprintln!("{}", render_search_form_lisp(&compact_form));
     }
 
-    let html = api_client.search_bugs(&search_cookie_header, product, &field_params)?;
-
-    if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_HTML") {
-        fs::write(&debug_path, &html)
-            .with_context(|| format!("写入调试 HTML 失败: {debug_path}"))?;
-        eprintln!("[debug] 搜索结果 HTML 已写入 {debug_path}");
+    let json_body = api_client.search_browse_json(&search_cookie_header, product, &field_params)?;
+    if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_JSON") {
+        fs::write(&debug_path, &json_body)
+            .with_context(|| format!("写入调试 JSON 失败: {debug_path}"))?;
+        eprintln!("[debug] 浏览 JSON 已写入 {debug_path}");
     }
-
-    let mut result = if browse_json {
-        let json_body = api_client.fetch_browse_json(&search_cookie_header, product)?;
-        if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_JSON") {
-            fs::write(&debug_path, &json_body)
-                .with_context(|| format!("写入调试 JSON 失败: {debug_path}"))?;
-            eprintln!("[debug] 浏览 JSON 已写入 {debug_path}");
-        }
-        search::parse_browse_json(&json_body)?
-    } else {
-        search::parse_search_result(&html)?
-    };
+    let mut result = search::parse_browse_json(&json_body)?;
     apply_result_limit(&mut result, query.limit);
     Ok((site_url, result))
 }
@@ -363,7 +332,7 @@ pub(crate) fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> 
 
 fn active_state_slot_hint(state: BugState) -> &'static str {
     if matches!(state, BugState::Active) {
-        "active 状态（list 未指定 --state 时默认启用）占用一个条件槽位；如不需要状态筛选，请使用 --state all 释放该槽位"
+        "active 状态（list 默认）占用一个条件槽位；如不需要状态筛选，请使用 --state all 释放该槽位"
     } else {
         ""
     }

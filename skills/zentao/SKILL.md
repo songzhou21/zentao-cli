@@ -19,28 +19,30 @@ zentao bug list --json=id,title,state,assignee,url
 zentao bug list --title 会议 --json=id,title,state,assignee,url
 zentao bug list -a zhousong -s active -L 100 --json=id,title,state,assignee
 zentao bug list --opened-by chenjie --opened-by niuweilong --opened-by cuiwenbo -s active --json=id,title,state,openedBy,assignee,url
-zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 --json
+zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 -s all --json
 zentao bug list --module 1099 --json=id,title,state
 ```
 
 - `--title` 可重复最多 3 个，OR；不是展示开关。
 - `--opened-by` 可重复最多 3 个，OR；值为用户**账号**（如 `chenjie`），列表展示的中文名不能直接当 value。
-- 状态：`active`（默认）/ `resolved` / `closed` / `all`。带解决日期（`--week`/`--month`/`--day`/`--resolved-from`/`--resolved-to`）且未写 `-s` 时自动 `all`。
+- 状态：`active`（默认）/ `resolved` / `closed` / `all`。查已解决/关闭或解决日期范围时要显式 `-s`。
 - 搜索两组各 3 槽；默认 `active` 占一槽。条件顶满且不需状态时用 `--state all`。
 - `--json` 必须用等号形式指定字段：`--json=id,title`（裸 `--json` = 全部字段）。
-- 列表字段：`id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignee` `resolvedDate` `resolution` `deadline` `url`。
-- 日期字段保留禅道原文，可能无年份；勿补全成 ISO。
+- 列表字段：`id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignee` `resolvedBy` `resolvedDate` `resolution` `deadline` `url`。
+- 日期是完整时间（如 `2026-08-20 11:30:31`）。`resolution` 是禅道代码（`fixed` 等）。`confirmed` 为布尔。人员是显示名。`resolvedBy` 未解决为 `null`。
 
 ## 统计
 
 ```bash
 zentao bug stats --title 会议优化5.1 --json
-zentao bug stats --title 会议优化5.1 --json=assignee,active,resolved,solved,closed,total
+zentao bug stats --title 会议优化5.1 --json=assignee,active,solved,closed,total
 ```
 
-- 一张表：激活 / 待验证按当前指派给；已解决 / 关闭 / 合计按解决者。合计 = 这个人写出的全部（含已关闭）。
+- 两张表：主表人员 / 激活 / 已解决 / 关闭 / 合计；待验证单独一张。
+- 激活按当前指派给；已解决 / 关闭按解决者。合计 = 激活+已解决+关闭。写出量 = 已解决+关闭。
 - 默认 `--state all`、`-L 1000`；样本制，触顶时 `incomplete` 为 `true`。无 `--by`。
-- JSON 行字段：`assignee,active,resolved,solved,closed,total`。`resolved` 为待验证，`solved` 为已解决，`total` 为写出的全部。
+- 筛选参数与 list 相同。
+- JSON：`rows` 为 `assignee,active,solved,closed,total`；`pending.rows` 为 `assignee,resolved`（待验证）。`solved` 为已解决，`total` 为主表列加总。
 
 ## 详情
 

@@ -116,7 +116,7 @@ fn global_options_and_bug_list_parse() {
         }) => {
             assert_eq!(args.product, Some(92));
             assert_eq!(args.assignee.as_deref(), Some("zhousong"));
-            assert!(matches!(args.state, Some(BugState::All)));
+            assert!(matches!(args.state, BugState::All));
             assert_eq!(args.limit, 50);
             assert_eq!(args.title, vec!["会议"]);
             assert!(!args.full_title);
@@ -127,7 +127,7 @@ fn global_options_and_bug_list_parse() {
 }
 
 #[test]
-fn bug_list_resolved_date_filters_default_state_to_all() {
+fn bug_list_keeps_default_active_with_resolved_date_filters() {
     let cli = Cli::try_parse_from(["zentao", "bug", "list", "--week"]).expect("parse");
     let Commands::Bug(BugArgs {
         command: BugSubCommands::List(args),
@@ -135,9 +135,8 @@ fn bug_list_resolved_date_filters_default_state_to_all() {
     else {
         panic!("unexpected command");
     };
-    assert!(args.state.is_none(), "clap should leave state unset");
     let query = BugSearchQuery::from(&args);
-    assert!(matches!(query.state, BugState::All));
+    assert!(matches!(query.state, BugState::Active));
     assert!(query.resolved_from.is_some());
     assert!(query.resolved_to.is_some());
 
@@ -157,32 +156,19 @@ fn bug_list_resolved_date_filters_default_state_to_all() {
     else {
         panic!("unexpected command");
     };
+    assert!(matches!(
+        BugSearchQuery::from(&args).state,
+        BugState::Active
+    ));
+
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--week", "-s", "all"]).expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
     assert!(matches!(BugSearchQuery::from(&args).state, BugState::All));
-
-    let cli =
-        Cli::try_parse_from(["zentao", "bug", "list", "--week", "-s", "active"]).expect("parse");
-    let Commands::Bug(BugArgs {
-        command: BugSubCommands::List(args),
-    }) = cli.command
-    else {
-        panic!("unexpected command");
-    };
-    assert!(matches!(
-        BugSearchQuery::from(&args).state,
-        BugState::Active
-    ));
-
-    let cli = Cli::try_parse_from(["zentao", "bug", "list"]).expect("parse");
-    let Commands::Bug(BugArgs {
-        command: BugSubCommands::List(args),
-    }) = cli.command
-    else {
-        panic!("unexpected command");
-    };
-    assert!(matches!(
-        BugSearchQuery::from(&args).state,
-        BugState::Active
-    ));
 }
 
 #[test]
@@ -603,15 +589,15 @@ fn json_fields_are_selected_and_normalized() {
             id: 1,
             severity: "2".to_string(),
             pri: "3".to_string(),
-            confirmed: "是".to_string(),
+            confirmed: "1".to_string(),
             title: "标题".to_string(),
-            status: "激活".to_string(),
+            status: "active".to_string(),
             opened_by: "alice".to_string(),
-            opened_date: "07-31 10:00".to_string(),
+            opened_date: "2026-07-31 10:00:00".to_string(),
             assigned_to: "bob".to_string(),
             resolved_by: String::new(),
-            resolved_date: "00-00 00:00".to_string(),
-            resolution: String::new(),
+            resolved_date: "0000-00-00 00:00:00".to_string(),
+            resolution: "fixed".to_string(),
             deadline: "0000-00-00".to_string(),
         }],
         total: None,
@@ -619,7 +605,7 @@ fn json_fields_are_selected_and_normalized() {
     let got = render_list_json(
         &result,
         "http://example.com/zentao",
-        "id,state,confirmed,openedDate,resolvedDate,url",
+        "id,state,confirmed,openedDate,resolvedBy,resolvedDate,resolution,url",
     )
     .expect("json");
     assert_eq!(
@@ -628,11 +614,108 @@ fn json_fields_are_selected_and_normalized() {
             "id": 1,
             "state": "active",
             "confirmed": true,
-            "openedDate": "07-31 10:00",
+            "openedDate": "2026-07-31 10:00:00",
+            "resolvedBy": null,
             "resolvedDate": null,
+            "resolution": "fixed",
             "url": "http://example.com/zentao/bug-view-1.html"
         }])
     );
+}
+
+#[test]
+fn list_json_confirmed_is_true_only_for_one() {
+    let confirmed_json = |confirmed: &str| {
+        render_list_json(
+            &search::SearchResult {
+                bugs: vec![search::BugRow {
+                    id: 1,
+                    severity: String::new(),
+                    pri: String::new(),
+                    confirmed: confirmed.to_string(),
+                    title: "t".to_string(),
+                    status: "active".to_string(),
+                    opened_by: String::new(),
+                    opened_date: String::new(),
+                    assigned_to: String::new(),
+                    resolved_by: String::new(),
+                    resolved_date: String::new(),
+                    resolution: String::new(),
+                    deadline: String::new(),
+                }],
+                total: None,
+            },
+            "http://example.com/zentao",
+            "confirmed",
+        )
+        .expect("json")
+    };
+    assert_eq!(confirmed_json("1"), json!([{ "confirmed": true }]));
+    assert_eq!(confirmed_json("0"), json!([{ "confirmed": false }]));
+    assert_eq!(confirmed_json(""), json!([{ "confirmed": false }]));
+    assert_eq!(confirmed_json("是"), json!([{ "confirmed": false }]));
+}
+
+#[test]
+fn list_json_from_browse_fixture_keeps_codes_and_full_dates() {
+    let parsed = search::parse_browse_json(include_str!(
+        "../../tests/fixtures/search/browse_bysearch_myqueryid.json"
+    ))
+    .expect("parse");
+    let bug = parsed
+        .bugs
+        .iter()
+        .find(|bug| bug.id == 58496)
+        .cloned()
+        .expect("resolved bug");
+    let got = render_list_json(
+        &search::SearchResult {
+            bugs: vec![bug],
+            total: None,
+        },
+        "http://zentao.test.sharexm.cn/zentao",
+        "",
+    )
+    .expect("json");
+    assert_eq!(
+        got,
+        json!([{
+            "id": 58496,
+            "title": "【会议优化5.1期兼容】创建会议后不会自动分享邀请链接给嘉宾",
+            "state": "resolved",
+            "severity": 2,
+            "priority": 2,
+            "confirmed": true,
+            "openedBy": "崔文波",
+            "openedDate": "2026-08-14 15:31:29",
+            "assignee": "崔文波",
+            "resolvedBy": "周松",
+            "resolvedDate": "2026-08-18 10:12:35",
+            "resolution": "fixed",
+            "deadline": "2026-08-05",
+            "url": "http://zentao.test.sharexm.cn/zentao/bug-view-58496.html"
+        }])
+    );
+
+    let table = render_bug_list_table(
+        &search::SearchResult {
+            bugs: parsed
+                .bugs
+                .iter()
+                .find(|bug| bug.id == 58496)
+                .cloned()
+                .into_iter()
+                .collect(),
+            total: None,
+        },
+        true,
+        "http://zentao.test.sharexm.cn/zentao",
+        false,
+        false,
+    );
+    assert!(table.contains("2026-08-14 15:31:29"));
+    assert!(table.contains("崔文波"));
+    assert!(table.contains("resolved"));
 }
 
 #[test]
@@ -641,11 +724,11 @@ fn result_limit_applies_to_table_and_json() {
         id: 1,
         severity: "2".to_string(),
         pri: "3".to_string(),
-        confirmed: "是".to_string(),
+        confirmed: "1".to_string(),
         title: "第一条".to_string(),
-        status: "激活".to_string(),
+        status: "active".to_string(),
         opened_by: "alice".to_string(),
-        opened_date: "07-31 10:00".to_string(),
+        opened_date: "2026-07-31 10:00:00".to_string(),
         assigned_to: "bob".to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -683,7 +766,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         title: "中文标题".to_string(),
         status: "active".to_string(),
         opened_by: "陈婕".to_string(),
-        opened_date: "07-31 10:00".to_string(),
+        opened_date: "2026-07-31 10:00:00".to_string(),
         assigned_to: "alice".to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -705,15 +788,15 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
     assert!(header.contains("创建日期"));
     assert!(header.contains("指派给"));
     let row = table.lines().nth(1).expect("row");
-    // 编号(6)+sp+状态(9)+sp+创建者(10)+sp+创建日期(11)+sp+标题(65)+sp = 106 before 指派给
+    // 编号(6)+sp+状态(9)+sp+创建者(10)+sp+创建日期(19)+sp+标题(65)+sp = 114 before 指派给
     let assignee_byte = row.find("alice").expect("assignee");
-    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 106);
+    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 114);
     let opened_by_byte = row.find("陈婕").expect("opened_by");
     assert_eq!(UnicodeWidthStr::width(&row[..opened_by_byte]), 17);
-    let opened_date_byte = row.find("07-31 10:00").expect("opened_date");
+    let opened_date_byte = row.find("2026-07-31 10:00:00").expect("opened_date");
     assert_eq!(UnicodeWidthStr::width(&row[..opened_date_byte]), 28);
     assert!(row.contains("陈婕"));
-    assert!(row.contains("07-31 10:00"));
+    assert!(row.contains("2026-07-31 10:00:00"));
     let six_columns = truncate_for_table("中文标题", 6);
     let five_columns = truncate_for_table("中文标题", 5);
     assert_eq!(UnicodeWidthStr::width(six_columns.as_str()), 6);
@@ -732,7 +815,7 @@ fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
         title: format!("{long_title}\n换行"),
         status: "resolved".to_string(),
         opened_by: "牛威龙".to_string(),
-        opened_date: "07-31 16:36".to_string(),
+        opened_date: "2026-07-31 16:36:00".to_string(),
         assigned_to: long_assignee.to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -772,7 +855,7 @@ fn bug_table_title_uses_osc8_hyperlink_when_enabled() {
         title: "会议优化标题".to_string(),
         status: "active".to_string(),
         opened_by: String::new(),
-        opened_date: "07-31 16:36".to_string(),
+        opened_date: "2026-07-31 16:36:00".to_string(),
         assigned_to: "alice".to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
