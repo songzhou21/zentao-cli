@@ -198,9 +198,15 @@ impl ZentaoApi {
         )))
     }
 
+    #[cfg(test)]
     pub fn fetch_bug_html(&self, bug_url: &str, cookie: &str) -> Result<(String, String)> {
         let (final_url, body) = self.fetch_text(bug_url, cookie, "获取 bug 详情失败")?;
         Ok((final_url, body))
+    }
+
+    pub fn fetch_bug_json(&self, bug_url: &str, cookie: &str) -> Result<(String, String)> {
+        let url = bug_view_json_url(bug_url);
+        self.fetch_text(&url, cookie, "获取 bug 详情失败")
     }
 
     pub fn login_with_password(
@@ -306,6 +312,16 @@ impl ZentaoApi {
             cookies,
             login_response_body,
         })
+    }
+}
+
+fn bug_view_json_url(bug_url: &str) -> String {
+    if let Some(prefix) = bug_url.strip_suffix(".html") {
+        format!("{prefix}.json")
+    } else if bug_url.ends_with(".json") {
+        bug_url.to_string()
+    } else {
+        format!("{bug_url}.json")
     }
 }
 

@@ -1,12 +1,18 @@
 use super::*;
-use chrono::{NaiveDate, Weekday};
+use crate::config;
+use crate::config::CookieSource;
+use crate::search;
+use crate::view;
+use chrono::{Datelike, NaiveDate, Weekday};
 use clap::Parser;
 use reqwest::Url;
 use serde_json::json;
+use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone)]
 struct ImageResponsePlan {
@@ -572,35 +578,22 @@ fn auth_login_has_no_password_argument() {
 }
 
 #[test]
-fn bug_view_accepts_id_with_configured_site() {
-    let got = parse_bug_input("51214", Some("http://example.com/zentao")).expect("parse id");
-    assert_eq!(got.id, 51214);
-    assert_eq!(got.site_url, "http://example.com/zentao");
-    assert_eq!(got.bug_url, "http://example.com/zentao/bug-view-51214.html");
+fn bug_view_parses_raw_json_flag() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "view", "1", "--raw-json"]).expect("parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::View(args),
+        }) => {
+            assert!(args.raw_json);
+            assert!(args.json.is_none());
+        }
+        _ => panic!("unexpected command"),
+    }
 }
 
 #[test]
-fn bug_view_url_uses_its_own_site() {
-    let got = parse_bug_input(
-        "http://shendao.sharexm.cn/zentao/bug-view-51214.html?tid=1",
-        Some("http://ignored.example/zentao"),
-    )
-    .expect("parse url");
-    assert_eq!(got.id, 51214);
-    assert_eq!(got.site_url, "http://shendao.sharexm.cn/zentao");
-}
-
-#[test]
-fn bug_view_id_requires_site() {
-    let err = parse_bug_input("51214", None).expect_err("missing site");
-    assert!(err.to_string().contains("缺少 site"));
-}
-
-#[test]
-fn bug_view_json_and_output_conflict() {
-    assert!(
-        Cli::try_parse_from(["zentao", "bug", "view", "1", "--json", "-o", "bug.json",]).is_err()
-    );
+fn bug_view_raw_json_conflicts_with_json() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "view", "1", "--raw-json", "--json"]).is_err());
 }
 
 #[test]
@@ -831,10 +824,10 @@ fn invalid_json_fields_are_rejected_before_io() {
 
 #[test]
 fn bare_json_selects_all_fields() {
-    let fields = parse_json_fields("", VIEW_JSON_FIELDS).expect("all fields");
+    let fields = parse_json_fields("", view::JSON_FIELDS).expect("all fields");
     assert_eq!(
         fields,
-        VIEW_JSON_FIELDS
+        view::JSON_FIELDS
             .iter()
             .map(|field| (*field).to_string())
             .collect::<Vec<_>>()
@@ -893,47 +886,6 @@ fn clap_parameter_errors_keep_clap_exit_code() {
         RunError::Clap(error) => assert_eq!(error.exit_code(), 2),
         RunError::Runtime(error) => panic!("expected clap error, got runtime error: {error}"),
     }
-}
-
-#[test]
-fn view_json_exposes_description_and_history_images() {
-    let detail = bug::BugDetail {
-        title: "标题".to_string(),
-        markdown_description: "![截图](http://example.com/description.png)".to_string(),
-        markdown_history: "- 备注：![重复截图](http://example.com/description.png) ![历史图片](http://example.com/history.jpeg)".to_string(),
-        attachments: vec![],
-    };
-    let got = render_view_json(1, "http://example.com", &detail, "images").expect("json");
-    assert_eq!(
-        got,
-        json!({
-            "images": [
-                "http://example.com/description.png",
-                "http://example.com/history.jpeg"
-            ]
-        })
-    );
-}
-
-#[test]
-fn view_json_url_is_canonical() {
-    let detail = bug::BugDetail {
-        title: "标题".to_string(),
-        markdown_description: String::new(),
-        markdown_history: String::new(),
-        attachments: vec![],
-    };
-    let got = render_view_json(
-        1,
-        "http://example.com/zentao/?tid=temporary",
-        &detail,
-        "url",
-    )
-    .expect("json");
-    assert_eq!(
-        got,
-        json!({ "url": "http://example.com/zentao/bug-view-1.html" })
-    );
 }
 
 #[test]

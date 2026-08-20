@@ -2,6 +2,7 @@
 name = "zentao-cli"
 version = "0.2.0"
 edition = "2021"
+readme = "AGENTS.md"
 
 [[bin]]
 name = "zentao"

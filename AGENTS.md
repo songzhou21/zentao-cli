@@ -1,10 +1,14 @@
 # zentao-cli (Rust)
 
-macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支持边界仅为 macOS。
+macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支持边界仅为 macOS。项目约定与用法以本文为准。
 
 ## 命令约定
 
 - Bug 资源入口：`zentao bug list`、`zentao bug stats`、`zentao bug view <ID|URL>`。
+- `bug view` 拉 `bug-view-<id>.json`（`{status,data,md5}`），只输出 JSON；默认完整对象，`--json=fields` 裁剪。不提供 Markdown 文档，无 `-o`。
+- 详情 JSON 字段：`id,title,priority,state,openedBy,openedDate,assignee,resolvedBy,resolvedDate,resolvedBuild,description,history,images,attachments,url`。`state` 为三态，不要 `resolution`。人员用显示名；`resolvedBuild` 用 `builds` 展示名；日期用详情接口完整时间。
+- `description` 与历史 `comment` 是去样式 HTML（留 `p` `br` `ol` `ul` `li` `img` `a`）。`images` 从描述/备注 HTML 的 `<img src>` 收集绝对地址。附件用 `files.title` + `webPath`。`history` 是事件数组（`at`/`action`/`actor`，按需 `assignee`/`changes`/`comment`）；`changes` 为 `field`+`label`+`old`+`new`。
+- `bug view --raw-json` 输出接口原始 JSON：把 `data` 从转义字符串展开成对象后再格式化。与 `--json` 互斥。
 - 不保留 `zentao search` 或 `zentao bug show` 兼容入口。
 - 全局配置：`--site`、`--config`。
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
@@ -46,4 +50,4 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-HTTP 流程单测会绑定临时 localhost 端口。
+fixture、断言要点和重抓步骤见 `docs/TESTING.md`。

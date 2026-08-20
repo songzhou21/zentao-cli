@@ -45,13 +45,18 @@ zentao bug stats --title 会议优化5.1 --json=assignee,active,resolved,solved,
 ## 详情
 
 ```bash
-zentao bug view 57801 --json=id,title,description,history,images,attachments,url
-zentao bug view http://example/zentao/bug-view-57801.html --json
+zentao bug view 57801
+zentao bug view 57801 --json=id,title,state,assignee,description,history,images,attachments,url
+zentao bug view http://example/zentao/bug-view-57801.html --json=id,title,history
+zentao bug view 58441 --raw-json
 ```
 
-- ID 需已配置 site；URL 用 URL 自身 site。
-- 详情字段：`id` `title` `description` `history` `images` `attachments` `url`。
-- `url` 稳定为 `<site>/bug-view-<id>.html`。
+- ID 需已配置 site；URL 用 URL 自身 site。默认打完整 JSON；`--json=fields` 裁剪。
+- 详情字段：`id` `title` `priority` `state` `openedBy` `openedDate` `assignee` `resolvedBy` `resolvedDate` `resolvedBuild` `description` `history` `images` `attachments` `url`。
+- `state`：`active` / `resolved` / `closed`。人员是显示名；`resolvedBuild` 是上线版本展示名。
+- `description` 与 `history[].comment` 是去样式 HTML，不是 Markdown。`images` 从描述/备注 HTML 的 `<img src>` 收集。
+- `history` 是数组：`at` `action` `actor`，按需 `assignee` `changes` `comment`。`changes` 含 `field` `label` `old` `new`。
+- `url` 稳定为 `<site>/bug-view-<id>.html`。接口原文用 `--raw-json`。
 
 ## 排查（仅当用户要分析/修 Bug）
 
