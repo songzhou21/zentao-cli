@@ -1,7 +1,7 @@
 use crate::cli::bug::{execute_bug_search, BugSearchQuery, BugState};
 use crate::cli::{
-    ansi_enabled, parse_json_fields, print_json, style_header, validate_optional_json_fields,
-    GlobalArgs,
+    ansi_enabled, parse_json_fields, print_json, style_header, style_warning,
+    validate_optional_json_fields, GlobalArgs,
 };
 use crate::search;
 use crate::stats;
@@ -128,6 +128,9 @@ pub(crate) fn run(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
     validate_optional_json_fields(args.json.as_deref(), LIST_JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
     let (site_url, result) = execute_bug_search(&query, global)?;
+    if let Some(warning) = truncated_warning(args.limit, result.bugs.len()) {
+        eprintln!("{}", style_warning(&warning));
+    }
     if let Some(fields) = args.json.as_deref() {
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
@@ -152,6 +155,17 @@ pub(crate) fn run(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// 触顶提示：返回条数已达 limit 即视为可能不全（与 stats 的 `sample_size >= limit` 语义一致）。
+pub(crate) fn truncated_warning(limit: u32, returned: usize) -> Option<String> {
+    if returned >= limit as usize {
+        Some(format!(
+            "warning: 结果已达 limit={limit}（当前 {returned} 条），可能不全；请提高 -L 或收窄筛选"
+        ))
+    } else {
+        None
+    }
 }
 
 pub(crate) fn render_list_json(

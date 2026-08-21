@@ -720,6 +720,17 @@ fn list_json_from_browse_fixture_keeps_codes_and_full_dates() {
 }
 
 #[test]
+fn truncated_warning_fires_at_limit_and_absent_below() {
+    assert_eq!(truncated_warning(30, 29), None);
+    let at_limit = truncated_warning(30, 30).expect("hit limit warns");
+    assert!(at_limit.contains("limit=30"));
+    assert!(at_limit.contains("30 条"));
+    assert!(at_limit.contains("-L"));
+    let over_limit = truncated_warning(30, 62).expect("over limit warns");
+    assert!(over_limit.contains("62 条"));
+}
+
+#[test]
 fn result_limit_applies_to_table_and_json() {
     let row = search::BugRow {
         id: 1,

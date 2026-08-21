@@ -21,7 +21,8 @@ pub(crate) use auth::status::{
 };
 #[cfg(test)]
 pub(crate) use bug::list::{
-    render_bug_list_table, render_list_json, truncate_for_table, LIST_JSON_FIELDS,
+    render_bug_list_table, render_list_json, truncate_for_table, truncated_warning,
+    LIST_JSON_FIELDS,
 };
 #[cfg(test)]
 pub(crate) use bug::{
