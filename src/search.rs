@@ -270,14 +270,61 @@ fn option_matches(option: &CandidateOption, query: &str, query_lower: &str) -> b
 }
 
 fn ambiguous_build_error(query: &str, matches: &[&CandidateOption]) -> anyhow::Error {
+    ambiguous_candidate_error(query, matches, "版本", "zentao bug candidates --build")
+}
+
+/// Resolve a user-supplied `--module` value to a Zentao module id.
+/// Digits pass through. Otherwise match candidate `value`/`name` (exact, then unique contains).
+pub fn resolve_module_value(query: &str, modules: &[CandidateOption]) -> Result<String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err(anyhow!("模块筛选不能为空"));
+    }
+    if is_build_id(query) {
+        return Ok(query.to_string());
+    }
+    if let Some(m) = modules.iter().find(|m| m.value == query) {
+        return Ok(m.value.clone());
+    }
+    let exact: Vec<&CandidateOption> = modules.iter().filter(|m| m.name == query).collect();
+    if exact.len() == 1 {
+        return Ok(exact[0].value.clone());
+    }
+    if exact.len() > 1 {
+        return Err(ambiguous_module_error(query, &exact));
+    }
+    let query_lower = query.to_lowercase();
+    let fuzzy: Vec<&CandidateOption> = modules
+        .iter()
+        .filter(|m| option_matches(m, query, &query_lower))
+        .collect();
+    match fuzzy.len() {
+        0 => Err(anyhow!(
+            "未找到模块「{query}」。用 `zentao bug candidates --module` 查看候选（value 用于 --module）"
+        )),
+        1 => Ok(fuzzy[0].value.clone()),
+        _ => Err(ambiguous_module_error(query, &fuzzy)),
+    }
+}
+
+fn ambiguous_module_error(query: &str, matches: &[&CandidateOption]) -> anyhow::Error {
+    ambiguous_candidate_error(query, matches, "模块", "zentao bug candidates --module")
+}
+
+fn ambiguous_candidate_error(
+    query: &str,
+    matches: &[&CandidateOption],
+    label: &str,
+    candidates_cmd: &str,
+) -> anyhow::Error {
     let mut lines = vec![format!(
-        "版本「{query}」匹配到 {} 个，请改用版本 ID：",
+        "{label}「{query}」匹配到 {} 个，请改用 ID：",
         matches.len()
     )];
-    for build in matches {
-        lines.push(format!("  {}  {}", build.value, build.name));
+    for m in matches {
+        lines.push(format!("  {}  {}", m.value, m.name));
     }
-    lines.push("用 `zentao bug candidates --build` 查看全部候选".to_string());
+    lines.push(format!("用 `{candidates_cmd}` 查看全部候选"));
     anyhow!(lines.join("\n"))
 }
 

@@ -232,6 +232,17 @@ pub(crate) fn execute_bug_search(
             );
         }
     }
+    if needs_module_name_lookup(&query) {
+        let modules = cache::load_or_fetch(&cache_dir, product, search::KIND_MODULE, || {
+            api_client.fetch_product_browse_json(&cookie.cookie_header, product)
+        })?;
+        if let Some(raw) = query.module.take() {
+            query.module = Some(search::resolve_module_value(&raw, &modules)?);
+        }
+        if debug_enabled() {
+            eprintln!("[debug] resolved module={:?}", query.module);
+        }
+    }
     let field_params = build_search_field_params(&query);
 
     if debug_enabled() {
@@ -270,6 +281,13 @@ fn needs_build_name_lookup(query: &BugSearchQuery) -> bool {
             .resolved_build
             .as_deref()
             .is_some_and(|value| !search::is_build_id(value))
+}
+
+fn needs_module_name_lookup(query: &BugSearchQuery) -> bool {
+    query
+        .module
+        .as_deref()
+        .is_some_and(|value| !search::is_build_id(value))
 }
 
 pub(crate) fn apply_result_limit(result: &mut search::SearchResult, limit: u32) {
