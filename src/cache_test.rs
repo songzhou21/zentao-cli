@@ -1,5 +1,5 @@
 use super::*;
-use crate::search::{SelectionOption, KIND_BUILD, KIND_MODULE};
+use crate::search::{CandidateOption, KIND_BUILD, KIND_MODULE};
 use chrono::{Duration, Local};
 use std::collections::BTreeMap;
 use std::fs;
@@ -9,8 +9,8 @@ fn fixture_browse() -> &'static str {
     include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json")
 }
 
-fn sample_build() -> SelectionOption {
-    SelectionOption {
+fn sample_build() -> CandidateOption {
+    CandidateOption {
         value: "982".into(),
         name: "1.2.17-iOS-0831".into(),
     }

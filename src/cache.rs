@@ -1,4 +1,4 @@
-use crate::search::{self, SelectionOption};
+use crate::search::{self, CandidateOption};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Local};
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ const TTL: Duration = Duration::hours(1);
 pub struct Catalog {
     #[serde(rename = "fetchedAt")]
     pub fetched_at: String,
-    pub kinds: BTreeMap<String, Vec<SelectionOption>>,
+    pub kinds: BTreeMap<String, Vec<CandidateOption>>,
 }
 
 pub fn default_dir() -> Result<PathBuf> {
@@ -58,7 +58,7 @@ pub fn load_fresh_kind(
     dir: &Path,
     product: u64,
     kind: &str,
-) -> Result<Option<Vec<SelectionOption>>> {
+) -> Result<Option<Vec<CandidateOption>>> {
     let Some(catalog) = load(dir, product)? else {
         return Ok(None);
     };
@@ -86,7 +86,7 @@ pub fn load_or_fetch(
     product: u64,
     kind: &str,
     fetch: impl FnOnce() -> Result<String>,
-) -> Result<Vec<SelectionOption>> {
+) -> Result<Vec<CandidateOption>> {
     if let Some(rows) = load_fresh_kind(dir, product, kind)? {
         return Ok(rows);
     }

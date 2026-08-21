@@ -20,6 +20,8 @@ pub(crate) use auth::status::{
     cookie_presence_label, format_cookie_domains_line, render_cookie_table, CookieTableRow,
 };
 #[cfg(test)]
+pub(crate) use bug::candidates::{render_candidates_table, CandidateRow};
+#[cfg(test)]
 pub(crate) use bug::list::{
     render_bug_list_table, render_list_json, truncate_for_table, truncated_warning,
     LIST_JSON_FIELDS,

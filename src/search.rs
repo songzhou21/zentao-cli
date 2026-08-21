@@ -145,16 +145,16 @@ fn json_text(value: Option<&Value>) -> String {
     }
 }
 
-/// A selection candidate (`value` is the Zentao id, `name` is the display label).
+/// A filter candidate (`value` is the Zentao id, `name` is the display label).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SelectionOption {
+pub struct CandidateOption {
     pub value: String,
     pub name: String,
 }
 
 /// Parse `builds` / `modules` maps from a browse JSON payload into named kinds.
 /// Skips empty id/name (placeholder options) and omits empty kinds.
-pub fn parse_browse_kinds(body: &str) -> Result<BTreeMap<String, Vec<SelectionOption>>> {
+pub fn parse_browse_kinds(body: &str) -> Result<BTreeMap<String, Vec<CandidateOption>>> {
     let data = parse_browse_data(body)?;
     let mut kinds = BTreeMap::new();
     for (kind, field) in [(KIND_BUILD, "builds"), (KIND_MODULE, "modules")] {
@@ -185,7 +185,7 @@ fn parse_browse_data(body: &str) -> Result<Value> {
     unwrap_browse_payload(root).map_err(|err| anyhow!("获取候选列表失败: {err}"))
 }
 
-fn parse_id_name_map(value: Option<&Value>) -> Vec<SelectionOption> {
+fn parse_id_name_map(value: Option<&Value>) -> Vec<CandidateOption> {
     let Some(Value::Object(map)) = value else {
         return Vec::new();
     };
@@ -199,7 +199,7 @@ fn parse_id_name_map(value: Option<&Value>) -> Vec<SelectionOption> {
             if name.is_empty() {
                 return None;
             }
-            Some(SelectionOption {
+            Some(CandidateOption {
                 value: id.to_string(),
                 name,
             })
@@ -213,23 +213,24 @@ pub fn is_build_id(raw: &str) -> bool {
     !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit())
 }
 
-pub fn filter_builds<'a>(
-    builds: &'a [SelectionOption],
+/// Filter candidate options (builds, modules) by keyword; empty keyword returns all.
+pub fn filter_options<'a>(
+    options: &'a [CandidateOption],
     keyword: Option<&str>,
-) -> Vec<&'a SelectionOption> {
+) -> Vec<&'a CandidateOption> {
     let Some(keyword) = keyword.map(str::trim).filter(|s| !s.is_empty()) else {
-        return builds.iter().collect();
+        return options.iter().collect();
     };
     let keyword_lower = keyword.to_lowercase();
-    builds
+    options
         .iter()
-        .filter(|build| build_matches(build, keyword, &keyword_lower))
+        .filter(|option| option_matches(option, keyword, &keyword_lower))
         .collect()
 }
 
 /// Resolve a user-supplied `--opened-build` / `--resolved-build` value to a Zentao build id.
 /// Digits pass through. Otherwise match candidate `value`/`name` (exact, then unique contains).
-pub fn resolve_build_value(query: &str, builds: &[SelectionOption]) -> Result<String> {
+pub fn resolve_build_value(query: &str, builds: &[CandidateOption]) -> Result<String> {
     let query = query.trim();
     if query.is_empty() {
         return Err(anyhow!("版本筛选不能为空"));
@@ -240,7 +241,7 @@ pub fn resolve_build_value(query: &str, builds: &[SelectionOption]) -> Result<St
     if let Some(build) = builds.iter().find(|build| build.value == query) {
         return Ok(build.value.clone());
     }
-    let exact: Vec<&SelectionOption> = builds.iter().filter(|build| build.name == query).collect();
+    let exact: Vec<&CandidateOption> = builds.iter().filter(|build| build.name == query).collect();
     if exact.len() == 1 {
         return Ok(exact[0].value.clone());
     }
@@ -248,27 +249,27 @@ pub fn resolve_build_value(query: &str, builds: &[SelectionOption]) -> Result<St
         return Err(ambiguous_build_error(query, &exact));
     }
     let query_lower = query.to_lowercase();
-    let fuzzy: Vec<&SelectionOption> = builds
+    let fuzzy: Vec<&CandidateOption> = builds
         .iter()
-        .filter(|build| build_matches(build, query, &query_lower))
+        .filter(|build| option_matches(build, query, &query_lower))
         .collect();
     match fuzzy.len() {
         0 => Err(anyhow!(
-            "未找到版本「{query}」。用 `zentao bug selection --build` 查看候选（value 用于 --opened-build / --resolved-build）"
+            "未找到版本「{query}」。用 `zentao bug candidates --build` 查看候选（value 用于 --opened-build / --resolved-build）"
         )),
         1 => Ok(fuzzy[0].value.clone()),
         _ => Err(ambiguous_build_error(query, &fuzzy)),
     }
 }
 
-fn build_matches(build: &SelectionOption, query: &str, query_lower: &str) -> bool {
-    build.value == query
-        || build.name.contains(query)
-        || build.name.to_lowercase().contains(query_lower)
-        || build.value.to_lowercase().contains(query_lower)
+fn option_matches(option: &CandidateOption, query: &str, query_lower: &str) -> bool {
+    option.value == query
+        || option.name.contains(query)
+        || option.name.to_lowercase().contains(query_lower)
+        || option.value.to_lowercase().contains(query_lower)
 }
 
-fn ambiguous_build_error(query: &str, matches: &[&SelectionOption]) -> anyhow::Error {
+fn ambiguous_build_error(query: &str, matches: &[&CandidateOption]) -> anyhow::Error {
     let mut lines = vec![format!(
         "版本「{query}」匹配到 {} 个，请改用版本 ID：",
         matches.len()
@@ -276,7 +277,7 @@ fn ambiguous_build_error(query: &str, matches: &[&SelectionOption]) -> anyhow::E
     for build in matches {
         lines.push(format!("  {}  {}", build.value, build.name));
     }
-    lines.push("用 `zentao bug selection --build` 查看全部候选".to_string());
+    lines.push("用 `zentao bug candidates --build` 查看全部候选".to_string());
     anyhow!(lines.join("\n"))
 }
 

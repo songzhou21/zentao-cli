@@ -326,7 +326,7 @@ fn colorize_state(value: &str, state: &str) -> String {
     crate::cli::style_ansi(value, color)
 }
 
-fn normalize_table_cell(value: &str) -> String {
+pub(crate) fn normalize_table_cell(value: &str) -> String {
     value.trim().replace(['\n', '\r'], " ")
 }
 
@@ -352,7 +352,7 @@ pub(crate) fn truncate_for_table(value: &str, width: usize) -> String {
     pad_to_display_width(&truncated, width)
 }
 
-fn pad_to_display_width(value: &str, width: usize) -> String {
+pub(crate) fn pad_to_display_width(value: &str, width: usize) -> String {
     let padding = width.saturating_sub(UnicodeWidthStr::width(value));
     format!("{value}{}", " ".repeat(padding))
 }

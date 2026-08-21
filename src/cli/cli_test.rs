@@ -153,19 +153,19 @@ fn bug_list_parses_opened_and_resolved_build() {
 }
 
 #[test]
-fn bug_selection_requires_kind_and_parses_build() {
-    assert!(Cli::try_parse_from(["zentao", "bug", "selection"]).is_err());
+fn bug_candidates_requires_kind_and_parses_build() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "candidates"]).is_err());
     let cli = Cli::try_parse_from([
         "zentao",
         "bug",
-        "selection",
+        "candidates",
         "--build",
         "会议5.1",
         "--json=value,name",
     ])
     .expect("should parse");
     let Commands::Bug(BugArgs {
-        command: BugSubCommands::Selection(args),
+        command: BugSubCommands::Candidates(args),
     }) = cli.command
     else {
         panic!("unexpected command");
@@ -173,6 +173,83 @@ fn bug_selection_requires_kind_and_parses_build() {
     assert!(args.build);
     assert_eq!(args.keyword.as_deref(), Some("会议5.1"));
     assert_eq!(args.json.as_deref(), Some("value,name"));
+}
+
+#[test]
+fn bug_candidates_parses_without_json() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "candidates", "--build", "会议5.1"])
+        .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::Candidates(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(args.build);
+    assert_eq!(args.keyword.as_deref(), Some("会议5.1"));
+    assert!(args.json.is_none());
+}
+
+#[test]
+fn bug_candidates_parses_module() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "candidates",
+        "--module",
+        "会议",
+        "--json=value",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::Candidates(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(args.module);
+    assert!(!args.build);
+    assert_eq!(args.keyword.as_deref(), Some("会议"));
+    assert_eq!(args.json.as_deref(), Some("value"));
+}
+
+#[test]
+fn bug_candidates_table_renders_headers_and_rows() {
+    let rows = vec![
+        CandidateRow {
+            value: "982".to_string(),
+            name: "1.2.17-iOS".to_string(),
+        },
+        CandidateRow {
+            value: "1015".to_string(),
+            name: "会议优化5.1".to_string(),
+        },
+    ];
+    let table = render_candidates_table(&rows, "版本");
+    assert!(table.contains("编号"));
+    assert!(table.contains("版本"));
+    assert!(table.contains("982"));
+    assert!(table.contains("1.2.17-iOS"));
+    assert!(table.contains("1015"));
+    assert!(table.contains("会议优化5.1"));
+}
+
+#[test]
+fn bug_candidates_module_table_uses_module_header() {
+    let rows = vec![CandidateRow {
+        value: "1143".to_string(),
+        name: "/IM".to_string(),
+    }];
+    let table = render_candidates_table(&rows, "模块");
+    assert!(table.contains("模块"));
+    assert!(table.contains("1143"));
+    assert!(table.contains("/IM"));
+    assert_eq!(render_candidates_table(&[], "模块"), "没有匹配的模块\n");
+}
+
+#[test]
+fn bug_candidates_table_empty_message() {
+    assert_eq!(render_candidates_table(&[], "版本"), "没有匹配的版本\n");
 }
 
 #[test]
@@ -906,7 +983,7 @@ fn invalid_json_fields_are_rejected_before_io() {
     for command in [
         vec!["bug", "list", "--json=unknown"],
         vec!["bug", "view", "1", "--json=unknown"],
-        vec!["bug", "selection", "--build", "--json=unknown"],
+        vec!["bug", "candidates", "--build", "--json=unknown"],
     ] {
         let mut args = vec![
             OsString::from("--config"),

@@ -1,5 +1,5 @@
+pub(crate) mod candidates;
 pub(crate) mod list;
-pub(crate) mod selection;
 pub(crate) mod stats;
 pub(crate) mod view;
 
@@ -27,8 +27,8 @@ pub(crate) enum BugSubCommands {
     List(list::BugListArgs),
     Stats(stats::BugStatsArgs),
     View(view::BugViewArgs),
-    /// 列出筛选候选（当前支持 --build）
-    Selection(selection::BugSelectionArgs),
+    /// 列出筛选候选（--build 版本 / --module 模块）
+    Candidates(candidates::BugCandidatesArgs),
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -126,7 +126,7 @@ pub(crate) fn run(args: BugArgs, global: &GlobalArgs) -> Result<()> {
         BugSubCommands::List(args) => list::run(args, global),
         BugSubCommands::Stats(args) => stats::run(args, global),
         BugSubCommands::View(args) => view::run(args, global),
-        BugSubCommands::Selection(args) => selection::run(args, global),
+        BugSubCommands::Candidates(args) => candidates::run(args, global),
     }
 }
 

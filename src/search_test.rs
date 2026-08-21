@@ -128,7 +128,7 @@ fn parse_browse_builds_skips_empty_and_keeps_order() {
 
 #[test]
 fn resolve_build_value_digits_pass_through() {
-    let builds = vec![SelectionOption {
+    let builds = vec![CandidateOption {
         value: "982".into(),
         name: "1.2.17-iOS-0831".into(),
     }];
@@ -159,23 +159,23 @@ fn resolve_build_value_ambiguous_or_missing() {
     let message = err.to_string();
     assert!(message.contains("匹配到"));
     assert!(message.contains("982"));
-    assert!(message.contains("zentao bug selection --build"));
+    assert!(message.contains("zentao bug candidates --build"));
 
     let err = resolve_build_value("不存在的版本xyz", &builds).expect_err("missing");
     assert!(err.to_string().contains("未找到版本"));
 }
 
 #[test]
-fn filter_builds_by_keyword() {
+fn filter_options_by_keyword() {
     let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
     let builds = parse_browse_kinds(body)
         .expect("parse")
         .remove(KIND_BUILD)
         .expect("build");
-    let filtered = filter_builds(&builds, Some("1.2.17-iOS"));
+    let filtered = filter_options(&builds, Some("1.2.17-iOS"));
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].value, "982");
-    assert!(filter_builds(&builds, None).len() >= 20);
+    assert!(filter_options(&builds, None).len() >= 20);
 }
 
 #[test]
