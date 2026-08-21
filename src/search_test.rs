@@ -107,3 +107,88 @@ fn browse_json_rejects_login_html() {
     let err = parse_browse_json("<html><title>用户登录</title></html>").expect_err("login");
     assert!(err.to_string().contains("cookie"));
 }
+
+#[test]
+fn parse_browse_builds_skips_empty_and_keeps_order() {
+    let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
+    let builds = parse_browse_kinds(body)
+        .expect("parse")
+        .remove(KIND_BUILD)
+        .expect("build");
+    assert!(builds
+        .iter()
+        .all(|b| !b.value.is_empty() && !b.name.is_empty()));
+    assert!(builds
+        .iter()
+        .any(|b| b.value == "trunk" && b.name == "主干"));
+    let ios = builds.iter().find(|b| b.value == "982").expect("982");
+    assert!(ios.name.contains("1.2.17-iOS-0831"));
+    assert_eq!(builds.len(), 24);
+}
+
+#[test]
+fn resolve_build_value_digits_pass_through() {
+    let builds = vec![SelectionOption {
+        value: "982".into(),
+        name: "1.2.17-iOS-0831".into(),
+    }];
+    assert_eq!(resolve_build_value("982", &builds).unwrap(), "982");
+    assert_eq!(resolve_build_value(" 990 ", &[]).unwrap(), "990");
+}
+
+#[test]
+fn resolve_build_value_unique_name_contains() {
+    let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
+    let builds = parse_browse_kinds(body)
+        .expect("parse")
+        .remove(KIND_BUILD)
+        .expect("build");
+    assert_eq!(resolve_build_value("1.2.17-iOS", &builds).unwrap(), "982");
+    assert_eq!(resolve_build_value("主干", &builds).unwrap(), "trunk");
+    assert_eq!(resolve_build_value("trunk", &builds).unwrap(), "trunk");
+}
+
+#[test]
+fn resolve_build_value_ambiguous_or_missing() {
+    let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
+    let builds = parse_browse_kinds(body)
+        .expect("parse")
+        .remove(KIND_BUILD)
+        .expect("build");
+    let err = resolve_build_value("会议5.1", &builds).expect_err("ambiguous");
+    let message = err.to_string();
+    assert!(message.contains("匹配到"));
+    assert!(message.contains("982"));
+    assert!(message.contains("zentao bug selection --build"));
+
+    let err = resolve_build_value("不存在的版本xyz", &builds).expect_err("missing");
+    assert!(err.to_string().contains("未找到版本"));
+}
+
+#[test]
+fn filter_builds_by_keyword() {
+    let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
+    let builds = parse_browse_kinds(body)
+        .expect("parse")
+        .remove(KIND_BUILD)
+        .expect("build");
+    let filtered = filter_builds(&builds, Some("1.2.17-iOS"));
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].value, "982");
+    assert!(filter_builds(&builds, None).len() >= 20);
+}
+
+#[test]
+fn parse_browse_kinds_includes_build_and_module() {
+    let body = include_str!("../tests/fixtures/search/browse_bysearch_myqueryid.json");
+    let kinds = parse_browse_kinds(body).expect("parse");
+    let builds = kinds.get(KIND_BUILD).expect("build");
+    assert!(builds.iter().any(|row| row.value == "982"));
+    let modules = kinds.get(KIND_MODULE).expect("module");
+    assert!(modules
+        .iter()
+        .any(|row| row.value == "1143" && row.name == "/IM"));
+    assert!(modules
+        .iter()
+        .all(|row| !row.value.is_empty() && !row.name.is_empty()));
+}

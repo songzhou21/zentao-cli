@@ -844,6 +844,27 @@ fn search_browse_json_skips_html_table_page() {
 }
 
 #[test]
+fn fetch_product_browse_json_requests_product_browse() {
+    let plans = vec![ResponsePlan {
+        path: "/bug-browse-92.json",
+        status: 200,
+        location: None,
+        body: r#"{"status":"success","data":"{\"builds\":{\"982\":\"ios\"},\"bugs\":[]}"}"#,
+    }];
+    let (site, seen_cookie, handle) = spawn_test_server(plans);
+    let api = ZentaoApi::new(&site).expect("api should build");
+    let got = api.fetch_product_browse_json("zp=test", 92);
+    handle.join().expect("server should join");
+    let sent = seen_cookie.lock().expect("lock should succeed").clone();
+    assert!(
+        sent.iter().any(|v| v == "zp=test"),
+        "cookie header not sent: {sent:?}"
+    );
+    let body = got.expect("product browse should succeed");
+    assert!(body.contains("982"), "unexpected body: {body}");
+}
+
+#[test]
 fn fetch_browse_json_requests_json_view() {
     let plans = vec![ResponsePlan {
         path: "/bug-browse-92-0-bySearch-myQueryID.json",

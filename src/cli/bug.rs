@@ -1,8 +1,10 @@
 pub(crate) mod list;
+pub(crate) mod selection;
 pub(crate) mod stats;
 pub(crate) mod view;
 
 use crate::api::ZentaoApi;
+use crate::cache;
 use crate::cli::{
     debug_enabled, load_cookie_for_site, resolve_config_path, resolve_required, GlobalArgs,
 };
@@ -25,6 +27,8 @@ pub(crate) enum BugSubCommands {
     List(list::BugListArgs),
     Stats(stats::BugStatsArgs),
     View(view::BugViewArgs),
+    /// 列出筛选候选（当前支持 --build）
+    Selection(selection::BugSelectionArgs),
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -122,6 +126,7 @@ pub(crate) fn run(args: BugArgs, global: &GlobalArgs) -> Result<()> {
         BugSubCommands::List(args) => list::run(args, global),
         BugSubCommands::Stats(args) => stats::run(args, global),
         BugSubCommands::View(args) => view::run(args, global),
+        BugSubCommands::Selection(args) => selection::run(args, global),
     }
 }
 
@@ -208,7 +213,26 @@ pub(crate) fn execute_bug_search(
     let api_client = ZentaoApi::new(&site_url)?;
     let cookie = load_cookie_for_site(&site_url, None, cfg.as_ref())?;
     let search_cookie_header = append_search_cookie_page_size(&cookie.cookie_header, query.limit);
-    let field_params = build_search_field_params(query);
+    let cache_dir = cache::default_dir()?;
+    let mut query = query.clone();
+    if needs_build_name_lookup(&query) {
+        let builds = cache::load_or_fetch(&cache_dir, product, search::KIND_BUILD, || {
+            api_client.fetch_product_browse_json(&cookie.cookie_header, product)
+        })?;
+        if let Some(raw) = query.opened_build.take() {
+            query.opened_build = Some(search::resolve_build_value(&raw, &builds)?);
+        }
+        if let Some(raw) = query.resolved_build.take() {
+            query.resolved_build = Some(search::resolve_build_value(&raw, &builds)?);
+        }
+        if debug_enabled() {
+            eprintln!(
+                "[debug] resolved opened-build={:?} resolved-build={:?}",
+                query.opened_build, query.resolved_build
+            );
+        }
+    }
+    let field_params = build_search_field_params(&query);
 
     if debug_enabled() {
         let debug_form = api_client.debug_search_form(product, &field_params)?;
@@ -228,8 +252,24 @@ pub(crate) fn execute_bug_search(
         eprintln!("[debug] 浏览 JSON 已写入 {debug_path}");
     }
     let mut result = search::parse_browse_json(&json_body)?;
+    if let Err(err) = cache::save_from_browse_json(&cache_dir, product, &json_body) {
+        if debug_enabled() {
+            eprintln!("[debug] 写入候选缓存失败: {err}");
+        }
+    }
     apply_result_limit(&mut result, query.limit);
     Ok((site_url, result))
+}
+
+fn needs_build_name_lookup(query: &BugSearchQuery) -> bool {
+    query
+        .opened_build
+        .as_deref()
+        .is_some_and(|value| !search::is_build_id(value))
+        || query
+            .resolved_build
+            .as_deref()
+            .is_some_and(|value| !search::is_build_id(value))
 }
 
 pub(crate) fn apply_result_limit(result: &mut search::SearchResult, limit: u32) {

@@ -1,6 +1,7 @@
 mod api;
 mod browser;
 mod bug;
+mod cache;
 mod cli;
 mod config;
 mod cookie_store;

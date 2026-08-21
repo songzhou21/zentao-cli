@@ -110,6 +110,72 @@ fn bug_list_parses_full_title_flag() {
 }
 
 #[test]
+fn bug_list_parses_opened_and_resolved_build() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--opened-build",
+        "982",
+        "--state",
+        "all",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert_eq!(args.opened_build.as_deref(), Some("982"));
+    let query = BugSearchQuery::from(&args);
+    assert_eq!(query.opened_build.as_deref(), Some("982"));
+    assert!(query.resolved_build.is_none());
+    assert!(build_search_field_params(&query)
+        .iter()
+        .any(|(k, v)| k == "openedBuild" && v == "982"));
+
+    let cli = Cli::try_parse_from(["zentao", "bug", "stats", "--resolved-build", "982"])
+        .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::Stats(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert_eq!(args.resolved_build.as_deref(), Some("982"));
+    let query = BugSearchQuery::from(&args);
+    assert_eq!(query.resolved_build.as_deref(), Some("982"));
+    assert!(query.opened_build.is_none());
+    assert!(build_search_field_params(&query)
+        .iter()
+        .any(|(k, v)| k == "resolvedBuild" && v == "982"));
+}
+
+#[test]
+fn bug_selection_requires_kind_and_parses_build() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "selection"]).is_err());
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "selection",
+        "--build",
+        "会议5.1",
+        "--json=value,name",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::Selection(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(args.build);
+    assert_eq!(args.keyword.as_deref(), Some("会议5.1"));
+    assert_eq!(args.json.as_deref(), Some("value,name"));
+}
+
+#[test]
 fn bug_list_parses_plain_flag() {
     let cli = Cli::try_parse_from(["zentao", "bug", "list", "--plain"]).expect("should parse");
     match cli.command {
@@ -829,6 +895,7 @@ fn invalid_json_fields_are_rejected_before_io() {
     for command in [
         vec!["bug", "list", "--json=unknown"],
         vec!["bug", "view", "1", "--json=unknown"],
+        vec!["bug", "selection", "--build", "--json=unknown"],
     ] {
         let mut args = vec![
             OsString::from("--config"),

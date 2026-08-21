@@ -48,12 +48,12 @@ pub(crate) struct BugStatsArgs {
     #[arg(long, value_name = "MODULE_ID")]
     pub(crate) module: Option<String>,
 
-    /// 影响版本 ID，例如 982
-    #[arg(long, value_name = "BUILD_ID")]
+    /// 影响版本：ID 或唯一名称片段，例如 982 或 1.2.17-iOS
+    #[arg(long, value_name = "BUILD")]
     pub(crate) opened_build: Option<String>,
 
-    /// 解决版本 ID，例如 982
-    #[arg(long, value_name = "BUILD_ID")]
+    /// 解决版本：ID 或唯一名称片段，例如 982 或 1.2.17-iOS
+    #[arg(long, value_name = "BUILD")]
     pub(crate) resolved_build: Option<String>,
 
     /// Bug 状态；默认 all（按指派人做全状态剖面）

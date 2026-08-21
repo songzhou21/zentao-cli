@@ -17,6 +17,7 @@
 覆盖模块：
 
 - `src/config.rs`
+- `src/cache.rs`
 - `src/api.rs`
 - `src/bug.rs`
 - `src/cli/`

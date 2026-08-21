@@ -1,6 +1,10 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
+
+pub const KIND_BUILD: &str = "build";
+pub const KIND_MODULE: &str = "module";
 
 /// A single Bug row from Zentao's browse JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +143,141 @@ fn json_text(value: Option<&Value>) -> String {
         Some(Value::Bool(b)) => b.to_string(),
         _ => String::new(),
     }
+}
+
+/// A selection candidate (`value` is the Zentao id, `name` is the display label).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectionOption {
+    pub value: String,
+    pub name: String,
+}
+
+/// Parse `builds` / `modules` maps from a browse JSON payload into named kinds.
+/// Skips empty id/name (placeholder options) and omits empty kinds.
+pub fn parse_browse_kinds(body: &str) -> Result<BTreeMap<String, Vec<SelectionOption>>> {
+    let data = parse_browse_data(body)?;
+    let mut kinds = BTreeMap::new();
+    for (kind, field) in [(KIND_BUILD, "builds"), (KIND_MODULE, "modules")] {
+        let rows = parse_id_name_map(data.get(field));
+        if !rows.is_empty() {
+            kinds.insert(kind.to_string(), rows);
+        }
+    }
+    Ok(kinds)
+}
+
+fn parse_browse_data(body: &str) -> Result<Value> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("获取候选列表失败: 页面内容为空"));
+    }
+    if looks_like_login_html(trimmed) {
+        return Err(anyhow!("获取候选列表失败: cookie 无效或已过期"));
+    }
+
+    let root: Value = serde_json::from_str(trimmed).map_err(|_| {
+        if trimmed.contains("登录") {
+            anyhow!("获取候选列表失败: cookie 无效或已过期")
+        } else {
+            anyhow!("获取候选列表失败: 无法解析浏览 JSON")
+        }
+    })?;
+    unwrap_browse_payload(root).map_err(|err| anyhow!("获取候选列表失败: {err}"))
+}
+
+fn parse_id_name_map(value: Option<&Value>) -> Vec<SelectionOption> {
+    let Some(Value::Object(map)) = value else {
+        return Vec::new();
+    };
+    map.iter()
+        .filter_map(|(id, name)| {
+            let id = id.trim();
+            if id.is_empty() {
+                return None;
+            }
+            let name = json_text(Some(name));
+            if name.is_empty() {
+                return None;
+            }
+            Some(SelectionOption {
+                value: id.to_string(),
+                name,
+            })
+        })
+        .collect()
+}
+
+/// Numeric build IDs are sent to Zentao as-is; names need candidate lookup.
+pub fn is_build_id(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    !trimmed.is_empty() && trimmed.chars().all(|c| c.is_ascii_digit())
+}
+
+pub fn filter_builds<'a>(
+    builds: &'a [SelectionOption],
+    keyword: Option<&str>,
+) -> Vec<&'a SelectionOption> {
+    let Some(keyword) = keyword.map(str::trim).filter(|s| !s.is_empty()) else {
+        return builds.iter().collect();
+    };
+    let keyword_lower = keyword.to_lowercase();
+    builds
+        .iter()
+        .filter(|build| build_matches(build, keyword, &keyword_lower))
+        .collect()
+}
+
+/// Resolve a user-supplied `--opened-build` / `--resolved-build` value to a Zentao build id.
+/// Digits pass through. Otherwise match candidate `value`/`name` (exact, then unique contains).
+pub fn resolve_build_value(query: &str, builds: &[SelectionOption]) -> Result<String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Err(anyhow!("版本筛选不能为空"));
+    }
+    if is_build_id(query) {
+        return Ok(query.to_string());
+    }
+    if let Some(build) = builds.iter().find(|build| build.value == query) {
+        return Ok(build.value.clone());
+    }
+    let exact: Vec<&SelectionOption> = builds.iter().filter(|build| build.name == query).collect();
+    if exact.len() == 1 {
+        return Ok(exact[0].value.clone());
+    }
+    if exact.len() > 1 {
+        return Err(ambiguous_build_error(query, &exact));
+    }
+    let query_lower = query.to_lowercase();
+    let fuzzy: Vec<&SelectionOption> = builds
+        .iter()
+        .filter(|build| build_matches(build, query, &query_lower))
+        .collect();
+    match fuzzy.len() {
+        0 => Err(anyhow!(
+            "未找到版本「{query}」。用 `zentao bug selection --build` 查看候选（value 用于 --opened-build / --resolved-build）"
+        )),
+        1 => Ok(fuzzy[0].value.clone()),
+        _ => Err(ambiguous_build_error(query, &fuzzy)),
+    }
+}
+
+fn build_matches(build: &SelectionOption, query: &str, query_lower: &str) -> bool {
+    build.value == query
+        || build.name.contains(query)
+        || build.name.to_lowercase().contains(query_lower)
+        || build.value.to_lowercase().contains(query_lower)
+}
+
+fn ambiguous_build_error(query: &str, matches: &[&SelectionOption]) -> anyhow::Error {
+    let mut lines = vec![format!(
+        "版本「{query}」匹配到 {} 个，请改用版本 ID：",
+        matches.len()
+    )];
+    for build in matches {
+        lines.push(format!("  {}  {}", build.value, build.name));
+    }
+    lines.push("用 `zentao bug selection --build` 查看全部候选".to_string());
+    anyhow!(lines.join("\n"))
 }
 
 fn map_user_account(users: Option<&serde_json::Map<String, Value>>, account: &str) -> String {

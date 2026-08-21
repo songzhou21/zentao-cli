@@ -135,6 +135,13 @@ impl ZentaoApi {
         Ok(body)
     }
 
+    /// Product browse JSON. Used for the `builds` id→name map (not a search result).
+    pub fn fetch_product_browse_json(&self, cookie: &str, product_id: u64) -> Result<String> {
+        let url = format!("{}/bug-browse-{}.json", self.site_url, product_id);
+        let (_, body) = self.fetch_text(&url, cookie, "获取版本列表失败")?;
+        Ok(body)
+    }
+
     /// JSON browse view for the current `myQueryID` session. Includes `resolvedBy`.
     pub fn fetch_browse_json(&self, cookie: &str, product_id: u64) -> Result<String> {
         let url = format!(
