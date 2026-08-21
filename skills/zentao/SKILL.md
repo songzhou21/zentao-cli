@@ -5,7 +5,7 @@ description: 查询和查看禅道 Bug；适用于按标题、指派人、解决
 
 # Zentao Bug Workflow
 
-用 `zentao` CLI 查禅道。**Agent 默认加 `--json`（或 `--json=fields`）读结构化输出**，不要依赖人类可读表格。
+用 `zentao` CLI 查禅道。**Agent 默认加 `--json`（或 `--json=fields`）读结构化输出**，不要依赖人类可读表格（`bug view` 默认即 JSON，`--json` 仅裁剪）。
 
 入口：`bug list` / `bug stats` / `bug view <ID|URL>` / `bug selection --build` / `auth status`。
 
