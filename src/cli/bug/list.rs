@@ -79,6 +79,14 @@ pub(crate) struct BugListArgs {
     #[arg(long, value_name = "MODULE_ID")]
     pub(crate) module: Option<String>,
 
+    /// 影响版本 ID，例如 982
+    #[arg(long, value_name = "BUILD_ID")]
+    pub(crate) opened_build: Option<String>,
+
+    /// 解决版本 ID，例如 982
+    #[arg(long, value_name = "BUILD_ID")]
+    pub(crate) resolved_build: Option<String>,
+
     /// Bug 状态；默认 active
     #[arg(short = 's', long, value_enum, value_name = "STATE", default_value_t = BugState::Active)]
     pub(crate) state: BugState,

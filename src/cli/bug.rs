@@ -56,6 +56,8 @@ pub(crate) struct BugSearchQuery {
     pub(crate) resolved_from: Option<String>,
     pub(crate) resolved_to: Option<String>,
     pub(crate) module: Option<String>,
+    pub(crate) opened_build: Option<String>,
+    pub(crate) resolved_build: Option<String>,
     pub(crate) state: BugState,
     pub(crate) product: Option<u64>,
     pub(crate) limit: u32,
@@ -79,6 +81,8 @@ impl From<&list::BugListArgs> for BugSearchQuery {
             resolved_from,
             resolved_to,
             module: args.module.clone(),
+            opened_build: args.opened_build.clone(),
+            resolved_build: args.resolved_build.clone(),
             state: args.state,
             product: args.product,
             limit: args.limit,
@@ -104,6 +108,8 @@ impl From<&stats::BugStatsArgs> for BugSearchQuery {
             resolved_from,
             resolved_to,
             module: args.module.clone(),
+            opened_build: args.opened_build.clone(),
+            resolved_build: args.resolved_build.clone(),
             state: args.state,
             product: args.product,
             limit: args.limit,
@@ -274,6 +280,12 @@ pub(crate) fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> 
     if args.resolved_to.is_some() {
         other += 1;
     }
+    if args.opened_build.is_some() {
+        other += 1;
+    }
+    if args.resolved_build.is_some() {
+        other += 1;
+    }
 
     if has_title_or && has_opened_by_or {
         if other > 0 {
@@ -384,6 +396,12 @@ pub(crate) fn build_search_field_params(query: &BugSearchQuery) -> Vec<(String, 
     }
     if let Some(ref module) = query.module {
         field_params.push(("module".to_string(), module.clone()));
+    }
+    if let Some(ref build) = query.opened_build {
+        field_params.push(("openedBuild".to_string(), build.clone()));
+    }
+    if let Some(ref build) = query.resolved_build {
+        field_params.push(("resolvedBuild".to_string(), build.clone()));
     }
     if let Some(status) = query.state.zentao_value() {
         field_params.push(("status".to_string(), status.to_string()));

@@ -52,6 +52,7 @@ pub(crate) struct GlobalArgs {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Commands {
     Auth(auth::AuthArgs),
     Bug(bug::BugArgs),

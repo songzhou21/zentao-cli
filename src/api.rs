@@ -489,6 +489,8 @@ fn summarize_login_response(raw: &str) -> String {
 /// - `"resolvedDate_to"` → operator `<=`
 /// - `"status"` → operator `=`
 /// - `"resolvedBy"` → operator `=`
+/// - `"openedBuild"` → operator `=`
+/// - `"resolvedBuild"` → operator `=`
 fn build_search_form(
     product_id: u64,
     action_url: &str,
@@ -651,6 +653,12 @@ fn build_search_form(
     }
     if let Some(v) = get("resolvedBy") {
         common.push(("resolvedBy", "=", v));
+    }
+    if let Some(v) = get("openedBuild") {
+        common.push(("openedBuild", "=", v));
+    }
+    if let Some(v) = get("resolvedBuild") {
+        common.push(("resolvedBuild", "=", v));
     }
     if let Some(v) = get("resolvedDate_from") {
         common.push(("resolvedDate", ">=", v));
