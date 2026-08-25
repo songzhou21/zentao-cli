@@ -5,6 +5,7 @@ mod cache;
 mod cli;
 mod config;
 mod cookie_store;
+mod report;
 mod search;
 mod stats;
 mod view;

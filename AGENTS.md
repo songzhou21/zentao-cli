@@ -4,7 +4,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 
 ## 命令约定
 
-- Bug 资源入口：`zentao bug list`、`zentao bug stats`、`zentao bug view <ID|URL>`、`zentao bug candidates --build`。
+- Bug 资源入口：`zentao bug list`、`zentao bug stats`、`zentao bug report`、`zentao bug view <ID|URL>`、`zentao bug candidates --build`。
 - `bug candidates --build`（版本候选）/ `--module`（模块候选）默认人类表格（编号/版本 或 编号/模块）；`--json[=value,name]` 输出 JSON（`value`,`name`）。`value` 用于 `--opened-build` / `--resolved-build` / `--module`。可跟关键词做名称包含过滤。
 - `bug view` 拉 `bug-view-<id>.json`（`{status,data,md5}`），只输出 JSON；默认完整对象，`--json=fields` 裁剪。不提供 Markdown 文档，无 `-o`。
 - 详情 JSON 字段：`id,title,priority,state,openedBy,openedDate,assignee,resolvedBy,resolvedDate,resolvedBuild,description,history,images,attachments,url`。`state` 为三态，不要 `resolution`。人员用显示名；`resolvedBuild` 用 `builds` 展示名；日期用详情接口完整时间。
@@ -12,13 +12,14 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - `bug view --raw-json` 输出接口原始 JSON：把 `data` 从转义字符串展开成对象后再格式化。与 `--json` 互斥。
 - 不保留 `zentao search`、`zentao bug show` 或 `zentao image` 兼容入口。
 - 全局配置：`--site`、`--config`。
-- `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
+- `bug list` / `bug stats` / `bug report` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。禁止硬编码解决者。
 - `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 100。要查已解决/关闭需显式 `-s`。`-s` / `--state` 可重复，最多三个值按 OR（`all` 不能与其他状态组合）。
 - `bug stats` 默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。无 `--by`，无通用 `--group-by`。
-- `bug list` / `bug stats` 都先 POST 与 list 相同的关键词搜索（`search-buildQuery.html`），再读浏览 JSON；不拉、不解析列表 HTML。
+- `bug report` 默认 `-s resolved -s closed`、`-L 1000`（只统计已解决和已关闭，不含激活）；同一套搜索样本再加工，不是独立查询。按标题第一个 `【…】` 内文分组（不是禅道 module，也不要把前缀当搜索条件）。JSON `groups[].name` 无括号（如 `"系统测试"`）；人类 markdown 从完整 `--json` 投影，组头写成 `【{name}】`。分桶只看状态：`resolved` / `closed` / `other`。条目用 `displayTitle`（去掉开头的 `【组名】` 及紧跟的 `/` 或空白）。
+- `bug list` / `bug stats` / `bug report` 都先 POST 与 list 相同的关键词搜索（`search-buildQuery.html`），再读浏览 JSON；不拉、不解析列表 HTML。
 - `bug stats` 两张表。主表：人员 / 激活 / 已解决 / 关闭 / 合计。激活按当前指派给；已解决 / 关闭按解决者；合计 = 激活+已解决+关闭（列加总）。写出量 = 已解决+关闭。无解决者的关闭单进 `(未解决)`。排序合计↓再激活↓再已解决↓。待验证单独一张表（当前指派且状态 `resolved`），空则不输出。JSON：`rows` 为 `assignee,active,solved,closed,total`；`pending.rows` 为 `assignee,resolved`（`resolved`=待验证）。
-- `list`/`stats` 解决日期快捷：`--week`（周一～周日）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，与 `--resolved-from/to` 互斥。
-- `list`/`stats` 版本筛选：`--opened-build`（影响版本）、`--resolved-build`（解决版本）；数字当作版本 ID 原样提交；非数字按候选名称唯一包含匹配后转 ID 再搜。多个/零个匹配时报错，并指向 `zentao bug candidates --build`。对应禅道 `openedBuild` / `resolvedBuild`，操作符 `=`。
+- `list`/`stats`/`report` 解决日期快捷：`--week`（周一～周日）、`--weekly`（上周五～本周四）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，彼此及与 `--resolved-from/to` 互斥。
+- `list`/`stats`/`report` 版本筛选：`--opened-build`（影响版本）、`--resolved-build`（解决版本）；数字当作版本 ID 原样提交；非数字按候选名称唯一包含匹配后转 ID 再搜。多个/零个匹配时报错，并指向 `zentao bug candidates --build`。对应禅道 `openedBuild` / `resolvedBuild`，操作符 `=`。
 - JSON 使用 `--json[=fields]`；裸 `--json` 输出全部字段，指定字段必须使用 `--json=id,title`。
 - 列表 JSON 日期为浏览接口完整时间（如 `2026-08-20 11:30:31`）；含 `openedDate` 与 `assignedDate`（空日期为 `null`）；`resolution` 为禅道代码（如 `fixed`）；`confirmed` 为布尔（`"1"` → true，其余为 false）；人员用显示名；含 `resolvedBy`（显示名，未解决为 `null`）。
 - `bug list` 支持 `--sort assignedDate` 与 `--order desc|asc`（有 `--sort` 时默认 `desc`）；未指定 `--sort` 时保持禅道默认顺序。单独 `--order` 报错。排序走禅道 `orderBy`，使 `-L` 按该字段取前 N 条。`stats` 不提供 `--sort`。

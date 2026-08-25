@@ -1,5 +1,6 @@
 pub(crate) mod candidates;
 pub(crate) mod list;
+pub(crate) mod report;
 pub(crate) mod stats;
 pub(crate) mod view;
 
@@ -26,6 +27,8 @@ pub(crate) struct BugArgs {
 pub(crate) enum BugSubCommands {
     List(list::BugListArgs),
     Stats(stats::BugStatsArgs),
+    /// 按标题【】前缀分组的解决报告（同一搜索结果再加工）
+    Report(report::BugReportArgs),
     View(view::BugViewArgs),
     /// 列出筛选候选（--build 版本 / --module 模块）
     Candidates(candidates::BugCandidatesArgs),
@@ -104,6 +107,7 @@ impl From<&list::BugListArgs> for BugSearchQuery {
     fn from(args: &list::BugListArgs) -> Self {
         let (resolved_from, resolved_to) = resolve_resolved_date_range(
             args.week,
+            args.weekly,
             args.month,
             args.day,
             args.resolved_from.clone(),
@@ -133,6 +137,37 @@ impl From<&stats::BugStatsArgs> for BugSearchQuery {
     fn from(args: &stats::BugStatsArgs) -> Self {
         let (resolved_from, resolved_to) = resolve_resolved_date_range(
             args.week,
+            args.weekly,
+            args.month,
+            args.day,
+            args.resolved_from.clone(),
+            args.resolved_to.clone(),
+            Local::now().date_naive(),
+        );
+        Self {
+            title: args.title.clone(),
+            assignee: args.assignee.clone(),
+            opened_by: args.opened_by.clone(),
+            resolved_by: args.resolved_by.clone(),
+            resolved_from,
+            resolved_to,
+            module: args.module.clone(),
+            opened_build: args.opened_build.clone(),
+            resolved_build: args.resolved_build.clone(),
+            state: args.state.clone(),
+            sort: None,
+            order: None,
+            product: args.product,
+            limit: args.limit,
+        }
+    }
+}
+
+impl From<&report::BugReportArgs> for BugSearchQuery {
+    fn from(args: &report::BugReportArgs) -> Self {
+        let (resolved_from, resolved_to) = resolve_resolved_date_range(
+            args.week,
+            args.weekly,
             args.month,
             args.day,
             args.resolved_from.clone(),
@@ -162,23 +197,27 @@ pub(crate) fn run(args: BugArgs, global: &GlobalArgs) -> Result<()> {
     match args.command {
         BugSubCommands::List(args) => list::run(args, global),
         BugSubCommands::Stats(args) => stats::run(args, global),
+        BugSubCommands::Report(args) => report::run(args, global),
         BugSubCommands::View(args) => view::run(args, global),
         BugSubCommands::Candidates(args) => candidates::run(args, global),
     }
 }
 
-/// Expand --week/--month/--day into resolvedDate bounds (inclusive, YYYY-MM-DD).
+/// Expand --week/--weekly/--month/--day into resolvedDate bounds (inclusive, YYYY-MM-DD).
 pub(crate) fn resolve_resolved_date_range(
     week: bool,
+    weekly: bool,
     month: bool,
     day: bool,
     resolved_from: Option<String>,
     resolved_to: Option<String>,
     today: NaiveDate,
 ) -> (Option<String>, Option<String>) {
-    if week || month || day {
+    if week || weekly || month || day {
         let (from, to) = if week {
             reporting_week_bounds(today)
+        } else if weekly {
+            reporting_weekly_bounds(today)
         } else if month {
             calendar_month_bounds(today)
         } else {
@@ -209,6 +248,15 @@ pub(crate) fn reporting_week_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) 
     let start = today - Duration::days(days_since_monday);
     let end = start + Duration::days(6);
     (start, end)
+}
+
+/// 周报周：上周五～本周四（含）。本周按周一～周日。
+pub(crate) fn reporting_weekly_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) {
+    let days_since_monday = today.weekday().num_days_from_monday() as i64;
+    let monday = today - Duration::days(days_since_monday);
+    let last_friday = monday - Duration::days(3);
+    let this_thursday = monday + Duration::days(3);
+    (last_friday, this_thursday)
 }
 
 pub(crate) fn calendar_month_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) {

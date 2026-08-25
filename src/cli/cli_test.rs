@@ -613,6 +613,7 @@ fn bug_stats_defaults_to_state_all_and_limit_1000() {
             assert!(!args.plain);
             assert!(args.json.is_none());
             assert!(!args.week);
+            assert!(!args.weekly);
             assert!(!args.month);
             assert!(!args.day);
         }
@@ -652,6 +653,33 @@ fn reporting_week_bounds_monday_through_sunday() {
 }
 
 #[test]
+fn reporting_weekly_bounds_last_friday_through_this_thursday() {
+    // Monday 2026-08-24 → 上周五 2026-08-21 .. 本周四 2026-08-27
+    let monday = NaiveDate::from_ymd_opt(2026, 8, 24).unwrap();
+    assert_eq!(
+        reporting_weekly_bounds(monday),
+        (
+            NaiveDate::from_ymd_opt(2026, 8, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 8, 27).unwrap()
+        )
+    );
+    let tuesday = NaiveDate::from_ymd_opt(2026, 8, 25).unwrap();
+    assert_eq!(
+        reporting_weekly_bounds(tuesday),
+        reporting_weekly_bounds(monday)
+    );
+    // Friday belongs to the week that just ended on Thursday
+    let friday = NaiveDate::from_ymd_opt(2026, 8, 21).unwrap();
+    assert_eq!(
+        reporting_weekly_bounds(friday),
+        (
+            NaiveDate::from_ymd_opt(2026, 8, 14).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 8, 20).unwrap()
+        )
+    );
+}
+
+#[test]
 fn calendar_month_and_day_bounds() {
     let d = NaiveDate::from_ymd_opt(2026, 8, 3).unwrap();
     assert_eq!(
@@ -674,19 +702,24 @@ fn calendar_month_and_day_bounds() {
 #[test]
 fn resolve_resolved_date_range_presets() {
     let today = NaiveDate::from_ymd_opt(2026, 8, 3).unwrap();
-    let (from, to) = resolve_resolved_date_range(true, false, false, None, None, today);
+    let (from, to) = resolve_resolved_date_range(true, false, false, false, None, None, today);
     assert_eq!(from.as_deref(), Some("2026-08-03"));
     assert_eq!(to.as_deref(), Some("2026-08-09"));
 
-    let (from, to) = resolve_resolved_date_range(false, true, false, None, None, today);
+    let (from, to) = resolve_resolved_date_range(false, true, false, false, None, None, today);
+    assert_eq!(from.as_deref(), Some("2026-07-31"));
+    assert_eq!(to.as_deref(), Some("2026-08-06"));
+
+    let (from, to) = resolve_resolved_date_range(false, false, true, false, None, None, today);
     assert_eq!(from.as_deref(), Some("2026-08-01"));
     assert_eq!(to.as_deref(), Some("2026-08-31"));
 
-    let (from, to) = resolve_resolved_date_range(false, false, true, None, None, today);
+    let (from, to) = resolve_resolved_date_range(false, false, false, true, None, None, today);
     assert_eq!(from.as_deref(), Some("2026-08-03"));
     assert_eq!(to.as_deref(), Some("2026-08-03"));
 
     let (from, to) = resolve_resolved_date_range(
+        false,
         false,
         false,
         false,
@@ -702,6 +735,7 @@ fn resolve_resolved_date_range_presets() {
         false,
         false,
         false,
+        false,
         Some("2026-01-01 08:30:00".into()),
         Some("2026-01-31 18:00:00".into()),
         today,
@@ -714,6 +748,7 @@ fn resolve_resolved_date_range_presets() {
 fn date_presets_conflict_with_each_other_and_resolved_range() {
     assert!(Cli::try_parse_from(["zentao", "bug", "stats", "--week", "--month"]).is_err());
     assert!(Cli::try_parse_from(["zentao", "bug", "list", "--day", "--week"]).is_err());
+    assert!(Cli::try_parse_from(["zentao", "bug", "list", "--weekly", "--week"]).is_err());
     assert!(Cli::try_parse_from([
         "zentao",
         "bug",

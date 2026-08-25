@@ -64,16 +64,20 @@ pub(crate) struct BugListArgs {
     #[arg(long, value_name = "DATE")]
     pub(crate) resolved_to: Option<String>,
 
-    /// 解决日期快捷：本周一～本周日（含），与 --month/--day/--resolved-from/--resolved-to 互斥
-    #[arg(long, conflicts_with_all = ["month", "day", "resolved_from", "resolved_to"])]
+    /// 解决日期快捷：本周一～本周日（含），与 --weekly/--month/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["weekly", "month", "day", "resolved_from", "resolved_to"])]
     pub(crate) week: bool,
 
-    /// 解决日期快捷：本月 1 日～月末（含），与 --week/--day/--resolved-from/--resolved-to 互斥
-    #[arg(long, conflicts_with_all = ["week", "day", "resolved_from", "resolved_to"])]
+    /// 解决日期快捷：上周五～本周四（含），与 --week/--month/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "month", "day", "resolved_from", "resolved_to"])]
+    pub(crate) weekly: bool,
+
+    /// 解决日期快捷：本月 1 日～月末（含），与 --week/--weekly/--day/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "weekly", "day", "resolved_from", "resolved_to"])]
     pub(crate) month: bool,
 
-    /// 解决日期快捷：今天，与 --week/--month/--resolved-from/--resolved-to 互斥
-    #[arg(long, conflicts_with_all = ["week", "month", "resolved_from", "resolved_to"])]
+    /// 解决日期快捷：今天，与 --week/--weekly/--month/--resolved-from/--resolved-to 互斥
+    #[arg(long, conflicts_with_all = ["week", "weekly", "month", "resolved_from", "resolved_to"])]
     pub(crate) day: bool,
 
     /// 所属模块 ID，例如 1099

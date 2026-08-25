@@ -7,7 +7,7 @@
 - 优先保证回归稳定性
 - 以单元测试为主，聚焦核心规则
 - `bug view` 使用真实 fixture（JSON + 对照 HTML）做解析回归，不访问禅道
-- `bug list` / `bug stats` 只使用固化浏览 JSON fixture（`bug-browse-…-bySearch-myQueryID.json`）做解析、列表 JSON 与聚合回归，不保留列表 HTML 样本
+- `bug list` / `bug stats` / `bug report` 只使用固化浏览 JSON fixture（`bug-browse-…-bySearch-myQueryID.json`）做解析、列表 JSON、聚合与报告分组回归，不保留列表 HTML 样本
 - 避免依赖真实禅道、真实 Chrome 环境
 
 ## 测试分层
@@ -26,7 +26,7 @@
 重点：
 
 - 参数与分支逻辑
-- `bug list/stats/view`、认证、配置和 JSON 字段契约
+- `bug list/stats/report/view`、认证、配置和 JSON 字段契约
 - 错误路径与边界条件
 - 核心业务规则断言
 - HTTP 流程（`src/api_test.rs`、`src/cli/cli_test.rs`）在 `127.0.0.1:0` 起临时 mock，不访问禅道
@@ -48,6 +48,7 @@
 - `tests/fixtures/search/browse_assigned_to_zhousong.json`（`--resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 -L 5` 实抓；关闭后 `assignedTo` 为 Closed）
 - `tests/fixtures/search/browse_empty.json`（无匹配标题实抓，`bugs` 为空数组）
 - `tests/fixtures/search/browse_assigned_date_desc.json`（`--module 1144 -s active --sort assignedDate -L 5` 实抓；`assignedDate` 倒序，编号非 id 倒序）
+- `tests/fixtures/search/browse_resolved_by_zhousong_month.json`（`--resolved-by zhousong --month -s all -L 1000` 实抓；`bug report` 标题前缀分组回归）
 
 更新浏览 JSON fixture（需本机 Cookie 可用）：
 
@@ -60,9 +61,11 @@ ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_empty.json \
   zentao bug list --title __zentao_cli_no_match_xyz_9f3a2__ -L 5
 ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_assigned_date_desc.json \
   zentao bug list --module 1144 -s active --sort assignedDate -L 5
+ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_resolved_by_zhousong_month.json \
+  zentao bug list --resolved-by zhousong --month -s all -L 1000
 ```
 
-然后按新样本更新 `parses_browse_json_fixture` / `parses_assigned_browse_json_fixture` / `parses_empty_browse_json_fixture` / `aggregate_browse_json_fixture` 中的条数断言。
+然后按新样本更新 `parses_browse_json_fixture` / `parses_assigned_browse_json_fixture` / `parses_empty_browse_json_fixture` / `aggregate_browse_json_fixture` / `groups_zhousong_month_browse_fixture` 中的条数断言。
 
 更新 `bug view` JSON fixture：
 

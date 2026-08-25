@@ -7,7 +7,7 @@ description: Query and view Zentao bugs — filter by title, assignee, resolver,
 
 Zentao (禅道) is a project management and bug tracking platform. Use the `zentao` CLI to query it. **Agents should always add `--json` (or `--json=fields`) for structured output** — do not rely on human-readable tables (`bug view` defaults to JSON; `--json` only trims fields).
 
-Entry points: `bug view <ID|URL>` / `bug list` / `bug stats` / `bug candidates --build`.
+Entry points: `bug view <ID|URL>` / `bug list` / `bug stats` / `bug report` / `bug candidates --build`.
 
 ## List
 
@@ -50,6 +50,19 @@ zentao bug stats --title 会议优化5.1 --json=assignee,active,solved,closed,to
 - Main table: assignee / active / solved / closed / total; pending-verification is a separate table. Active counts by current assignee; solved/closed count by resolver.
 - Defaults to `--state all`, `-L 1000`. When the limit is hit, `incomplete` is `true`. Accepts the same filters as `bug list`.
 - JSON: `rows` contains `assignee,active,solved,closed,total`; `pending.rows` contains `assignee,resolved`.
+
+## Report
+
+```bash
+zentao bug report --resolved-by zhousong --month --json
+zentao bug report --resolved-by zhousong --weekly --json=name,count,id,displayTitle,bucket,assignee
+```
+
+- Same filters as `bug list` / `bug stats`. Defaults `-s resolved -s closed`, `-L 1000` (resolved and closed only).
+- Post-process of the search sample: group by the first `【…】` inner text. JSON `groups[].name` has no brackets (`"系统测试"`).
+- Buckets by state only: `resolved` / `closed` / `other`.
+- Human markdown is projected from the JSON: wrap `name` as `【系统测试】`; list items use `displayTitle`.
+- `--week` = Mon–Sun; `--weekly` = last Friday–this Thursday; `--month` / `--day` as in list/stats.
 
 ## View
 

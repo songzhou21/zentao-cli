@@ -54,7 +54,11 @@ _Avoid_: build ID, 构建号
 
 **Bug Stats**:
 在与 Bug List 相同的筛选母集上，先提交搜索再读浏览 JSON，不刮列表页 HTML。主表：激活按当前指派人；已解决 / 关闭按解决者；合计是列加总（激活+已解决+关闭）。写出量从已解决+关闭推导。待验证单独一块（`pending`），按当前指派人、状态 `resolved`。人类表格投影同一套 JSON 字段。表头中文；JSON 字段名仍为英文。`resolved` 表示待验证，`solved` 表示已解决，`closed` 表示关闭，`total` 表示主表列加总。样本受 `-L/--limit` 约束，不保证全集。
-_Avoid_: Report export, dashboard, group-by engine, 列表 HTML
+_Avoid_: dashboard, 通用 group-by engine, 列表 HTML, 标题前缀分组
+
+**Bug Report**:
+与 Bug List / Bug Stats 同一套搜索样本，再按标题第一个 `【…】` 内文分组（不是禅道 module）。JSON `groupBy` 为 `titlePrefix`；`groups[].name` 无括号（如 `"系统测试"`）。分桶只看状态：`resolved` / `closed` / `other`。人类 markdown 必须从完整 `--json` 投影：组头把 `name` 包成 `【系统测试】`，条目用 `displayTitle`。默认 `-s resolved -s closed`、`-L 1000`（不含激活）。`--weekly` 为上周五～本周四。
+_Avoid_: 把标题前缀当搜索条件, 用 module 分组, 人读另算一套, 硬编码解决者/产品, pending/willnotfix 当分桶
 
 **Active / Resolved / Closed**:
 禅道 Bug 状态在 CLI 中的规范值。`active` 为激活；`resolved` 为待验证（非结案）；`closed` 为关闭。

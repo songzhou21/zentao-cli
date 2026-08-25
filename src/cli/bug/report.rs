@@ -1,13 +1,12 @@
 use crate::cli::bug::{execute_bug_search, BugSearchQuery, BugState};
-use crate::cli::{
-    ansi_enabled, print_json, style_warning, validate_optional_json_fields, GlobalArgs,
-};
+use crate::cli::{print_json, style_warning, validate_optional_json_fields, GlobalArgs};
+use crate::report;
 use crate::stats;
 use anyhow::Result;
 use clap::Args;
 
 #[derive(Debug, Args)]
-pub(crate) struct BugStatsArgs {
+pub(crate) struct BugReportArgs {
     /// 标题关键词（包含匹配）。可重复传入，多个值按 OR 处理，例如 --title A --title B
     #[arg(long, value_name = "KEYWORD")]
     pub(crate) title: Vec<String>,
@@ -60,8 +59,13 @@ pub(crate) struct BugStatsArgs {
     #[arg(long, value_name = "BUILD")]
     pub(crate) resolved_build: Option<String>,
 
-    /// Bug 状态；可重复传入，多个值按 OR。默认 all。例如 -s active -s resolved
-    #[arg(short = 's', long, value_enum, default_value = "all")]
+    /// Bug 状态；可重复传入，多个值按 OR。默认 resolved 与 closed
+    #[arg(
+        short = 's',
+        long,
+        value_enum,
+        default_values = ["resolved", "closed"]
+    )]
     pub(crate) state: Vec<BugState>,
 
     /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
@@ -78,11 +82,7 @@ pub(crate) struct BugStatsArgs {
     )]
     pub(crate) limit: u32,
 
-    /// 纯文本表格：关闭表头颜色等交互装饰
-    #[arg(long, default_value_t = false)]
-    pub(crate) plain: bool,
-
-    /// 输出 JSON；可选指定字段：assignee,active,resolved,solved,closed,total（resolved 在 pending）
+    /// 输出 JSON；可选指定字段：name,count,id,title,displayTitle,state,resolution,assignee,bucket,url,resolved,closed,other,total
     #[arg(
         long,
         num_args = 0..=1,
@@ -93,28 +93,32 @@ pub(crate) struct BugStatsArgs {
     pub(crate) json: Option<String>,
 }
 
-pub(crate) fn run(args: BugStatsArgs, global: &GlobalArgs) -> Result<()> {
-    validate_optional_json_fields(args.json.as_deref(), stats::JSON_FIELDS)?;
+pub(crate) fn run(args: BugReportArgs, global: &GlobalArgs) -> Result<()> {
+    validate_optional_json_fields(args.json.as_deref(), report::JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
-    let (_site_url, result) = execute_bug_search(&query, global)?;
-    let report = stats::aggregate(
+    let (site_url, result) = execute_bug_search(&query, global)?;
+    let built = report::build(
         &result.bugs,
+        &site_url,
         args.limit,
         stats::fetched_at_now(),
         query.resolved_from.clone(),
         query.resolved_to.clone(),
+        query.resolved_by.clone(),
     );
-    if report.incomplete {
-        eprintln!("{}", style_warning(&stats::incomplete_warning(&report)));
+    if built.incomplete {
+        eprintln!("{}", style_warning(&report::incomplete_warning(&built)));
     }
     if let Some(fields) = args.json.as_deref() {
-        let json = stats::render_json(&report, fields)?;
+        let json = report::render_json(&built, fields)?;
         print_json(&json)?;
     } else {
-        print!(
-            "{}",
-            stats::render_table(&report, !args.plain && ansi_enabled())
-        );
+        let json = report::render_json(&built, "")?;
+        print!("{}", report::render_markdown(&json));
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "report_test.rs"]
+mod tests;
