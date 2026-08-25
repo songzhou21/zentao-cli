@@ -32,6 +32,18 @@ pub(crate) enum BugSubCommands {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum BugSortField {
+    #[value(name = "assignedDate")]
+    AssignedDate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum BugSortOrder {
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum BugState {
     Active,
     Resolved,
@@ -63,8 +75,29 @@ pub(crate) struct BugSearchQuery {
     pub(crate) opened_build: Option<String>,
     pub(crate) resolved_build: Option<String>,
     pub(crate) state: Vec<BugState>,
+    pub(crate) sort: Option<BugSortField>,
+    pub(crate) order: Option<BugSortOrder>,
     pub(crate) product: Option<u64>,
     pub(crate) limit: u32,
+}
+
+impl BugSearchQuery {
+    pub(crate) fn zentao_order_by(&self) -> Option<String> {
+        let field = self.sort?;
+        let dir = match self.order.unwrap_or(BugSortOrder::Desc) {
+            BugSortOrder::Asc => "asc",
+            BugSortOrder::Desc => "desc",
+        };
+        Some(format!("{}_{dir}", field.zentao_name()))
+    }
+}
+
+impl BugSortField {
+    fn zentao_name(self) -> &'static str {
+        match self {
+            Self::AssignedDate => "assignedDate",
+        }
+    }
 }
 
 impl From<&list::BugListArgs> for BugSearchQuery {
@@ -88,6 +121,8 @@ impl From<&list::BugListArgs> for BugSearchQuery {
             opened_build: args.opened_build.clone(),
             resolved_build: args.resolved_build.clone(),
             state: args.state.clone(),
+            sort: args.sort,
+            order: args.order,
             product: args.product,
             limit: args.limit,
         }
@@ -115,6 +150,8 @@ impl From<&stats::BugStatsArgs> for BugSearchQuery {
             opened_build: args.opened_build.clone(),
             resolved_build: args.resolved_build.clone(),
             state: args.state.clone(),
+            sort: None,
+            order: None,
             product: args.product,
             limit: args.limit,
         }
@@ -187,11 +224,19 @@ pub(crate) fn calendar_month_bounds(today: NaiveDate) -> (NaiveDate, NaiveDate) 
     (start, end)
 }
 
+pub(crate) fn validate_sort_args(query: &BugSearchQuery) -> Result<()> {
+    if query.order.is_some() && query.sort.is_none() {
+        return Err(anyhow!("--order 需要同时指定 --sort"));
+    }
+    Ok(())
+}
+
 pub(crate) fn execute_bug_search(
     query: &BugSearchQuery,
     global: &GlobalArgs,
 ) -> Result<(String, search::SearchResult)> {
     validate_search_group_limits(query)?;
+    validate_sort_args(query)?;
 
     let cfg_path = resolve_config_path(global.config.as_deref())?;
     let cfg = config::load_config_optional(&cfg_path)?;
@@ -256,7 +301,13 @@ pub(crate) fn execute_bug_search(
         eprintln!("{}", render_search_form_lisp(&compact_form));
     }
 
-    let json_body = api_client.search_browse_json(&search_cookie_header, product, &field_params)?;
+    let order_by = query.zentao_order_by();
+    let json_body = api_client.search_browse_json(
+        &search_cookie_header,
+        product,
+        &field_params,
+        order_by.as_deref(),
+    )?;
     if let Ok(debug_path) = std::env::var("ZENTAO_DEBUG_JSON") {
         fs::write(&debug_path, &json_body)
             .with_context(|| format!("写入调试 JSON 失败: {debug_path}"))?;

@@ -46,7 +46,6 @@ fn global_options_and_bug_list_parse() {
             assert_eq!(args.state, vec![BugState::All]);
             assert_eq!(args.limit, 50);
             assert_eq!(args.title, vec!["会议"]);
-            assert!(!args.full_title);
             assert!(!args.plain);
         }
         _ => panic!("unexpected command"),
@@ -96,14 +95,8 @@ fn bug_list_keeps_default_active_with_resolved_date_filters() {
 }
 
 #[test]
-fn bug_list_parses_full_title_flag() {
-    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--full-title"]).expect("should parse");
-    match cli.command {
-        Commands::Bug(BugArgs {
-            command: BugSubCommands::List(args),
-        }) => assert!(args.full_title),
-        _ => panic!("unexpected command"),
-    }
+fn bug_list_rejects_full_title_flag() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "list", "--full-title"]).is_err());
 }
 
 #[test]
@@ -258,9 +251,74 @@ fn bug_list_defaults_to_state_active_and_limit_100() {
         }) => {
             assert_eq!(args.state, vec![BugState::Active]);
             assert_eq!(args.limit, 100);
+            assert!(args.sort.is_none());
+            assert!(args.order.is_none());
         }
         _ => panic!("unexpected command"),
     }
+}
+
+#[test]
+fn bug_list_parses_sort_assigned_date_default_desc() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--sort", "assignedDate"])
+        .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(matches!(args.sort, Some(BugSortField::AssignedDate)));
+    assert!(args.order.is_none());
+    let query = BugSearchQuery::from(&args);
+    assert_eq!(
+        query.zentao_order_by().as_deref(),
+        Some("assignedDate_desc")
+    );
+    validate_sort_args(&query).expect("sort without order is ok");
+}
+
+#[test]
+fn bug_list_parses_sort_assigned_date_asc() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--sort",
+        "assignedDate",
+        "--order",
+        "asc",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    assert!(matches!(args.order, Some(BugSortOrder::Asc)));
+    assert_eq!(
+        BugSearchQuery::from(&args).zentao_order_by().as_deref(),
+        Some("assignedDate_asc")
+    );
+}
+
+#[test]
+fn bug_list_order_without_sort_is_rejected() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "--order", "desc"]).expect("parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_sort_args(&BugSearchQuery::from(&args)).expect_err("order needs sort");
+    assert!(error.to_string().contains("--sort"));
+}
+
+#[test]
+fn bug_stats_rejects_sort_flag() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "stats", "--sort", "assignedDate"]).is_err());
 }
 
 #[test]
@@ -791,6 +849,7 @@ fn json_fields_are_selected_and_normalized() {
             status: "active".to_string(),
             opened_by: "alice".to_string(),
             opened_date: "2026-07-31 10:00:00".to_string(),
+            assigned_date: "2026-07-31 11:00:00".to_string(),
             assigned_to: "bob".to_string(),
             resolved_by: String::new(),
             resolved_date: "0000-00-00 00:00:00".to_string(),
@@ -834,6 +893,7 @@ fn list_json_confirmed_is_true_only_for_one() {
                     status: "active".to_string(),
                     opened_by: String::new(),
                     opened_date: String::new(),
+                    assigned_date: String::new(),
                     assigned_to: String::new(),
                     resolved_by: String::new(),
                     resolved_date: String::new(),
@@ -885,6 +945,7 @@ fn list_json_from_browse_fixture_keeps_codes_and_full_dates() {
             "confirmed": true,
             "openedBy": "崔文波",
             "openedDate": "2026-08-14 15:31:29",
+            "assignedDate": "2026-08-18 10:26:48",
             "assignee": "崔文波",
             "resolvedBy": "周松",
             "resolvedDate": "2026-08-18 10:12:35",
@@ -905,12 +966,13 @@ fn list_json_from_browse_fixture_keeps_codes_and_full_dates() {
                 .collect(),
             total: None,
         },
-        true,
         "http://zentao.test.sharexm.cn/zentao",
         false,
         false,
     );
-    assert!(table.contains("2026-08-14 15:31:29"));
+    assert!(table.contains("08-14 15:31:29"));
+    assert!(table.contains("08-18 10:26:48"));
+    assert!(!table.contains("2026-08-14 15:31:29"));
     assert!(table.contains("崔文波"));
     assert!(table.contains("resolved"));
 }
@@ -937,6 +999,7 @@ fn result_limit_applies_to_table_and_json() {
         status: "active".to_string(),
         opened_by: "alice".to_string(),
         opened_date: "2026-07-31 10:00:00".to_string(),
+        assigned_date: "2026-07-31 11:00:00".to_string(),
         assigned_to: "bob".to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -957,7 +1020,7 @@ fn result_limit_applies_to_table_and_json() {
 
     apply_result_limit(&mut result, 1);
     assert_eq!(result.bugs.len(), 1);
-    let table = render_bug_list_table(&result, false, "http://example.com", false, false);
+    let table = render_bug_list_table(&result, "http://example.com", false, false);
     assert!(table.contains("第一条"));
     assert!(!table.contains("第二条"));
     let json = render_list_json(&result, "http://example.com", "id,title").expect("json");
@@ -975,6 +1038,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
         status: "active".to_string(),
         opened_by: "陈婕".to_string(),
         opened_date: "2026-07-31 10:00:00".to_string(),
+        assigned_date: "2026-07-31 11:00:00".to_string(),
         assigned_to: "alice".to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -986,7 +1050,6 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
             bugs: vec![bug],
             total: None,
         },
-        false,
         "http://example.com",
         false,
         false,
@@ -995,16 +1058,24 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
     assert!(header.contains("创建者"));
     assert!(header.contains("创建日期"));
     assert!(header.contains("指派给"));
+    assert!(header.contains("指派日期"));
+    assert!(
+        header.find("指派给").expect("assignee header")
+            < header.find("指派日期").expect("assigned date header")
+    );
     let row = table.lines().nth(1).expect("row");
-    // 编号(6)+sp+状态(9)+sp+创建者(10)+sp+创建日期(19)+sp+标题(65)+sp = 114 before 指派给
+    // 编号(6)+sp+状态(9)+sp+创建者(10)+sp+创建日期(14)+sp+标题(65)+sp = 109 before 指派给
     let assignee_byte = row.find("alice").expect("assignee");
-    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 114);
+    assert_eq!(UnicodeWidthStr::width(&row[..assignee_byte]), 109);
     let opened_by_byte = row.find("陈婕").expect("opened_by");
     assert_eq!(UnicodeWidthStr::width(&row[..opened_by_byte]), 17);
-    let opened_date_byte = row.find("2026-07-31 10:00:00").expect("opened_date");
+    let opened_date_byte = row.find("07-31 10:00:00").expect("opened_date");
     assert_eq!(UnicodeWidthStr::width(&row[..opened_date_byte]), 28);
+    let assigned_date_byte = row.find("07-31 11:00:00").expect("assigned_date");
+    assert_eq!(UnicodeWidthStr::width(&row[..assigned_date_byte]), 120);
     assert!(row.contains("陈婕"));
-    assert!(row.contains("2026-07-31 10:00:00"));
+    assert!(row.contains("07-31 10:00:00"));
+    assert!(!row.contains("2026-07-31"));
     let six_columns = truncate_for_table("中文标题", 6);
     let five_columns = truncate_for_table("中文标题", 5);
     assert_eq!(UnicodeWidthStr::width(six_columns.as_str()), 6);
@@ -1012,7 +1083,7 @@ fn bug_table_uses_terminal_display_width_for_cjk_text() {
 }
 
 #[test]
-fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
+fn bug_table_truncates_title_and_assignee() {
     let long_title = "【会议优化5.1期】H5和APP登录同一个账号在同一个直播间会议中展示人数不一致";
     let long_assignee = "特别长的指派人名";
     let bug = search::BugRow {
@@ -1024,6 +1095,7 @@ fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
         status: "resolved".to_string(),
         opened_by: "牛威龙".to_string(),
         opened_date: "2026-07-31 16:36:00".to_string(),
+        assigned_date: "2026-07-31 17:00:00".to_string(),
         assigned_to: long_assignee.to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -1035,22 +1107,16 @@ fn bug_table_full_title_keeps_complete_title_and_still_truncates_assignee() {
         total: None,
     };
 
-    let truncated = render_bug_list_table(&result, false, "http://example.com", false, false);
-    let truncated_row = truncated.lines().nth(1).expect("row");
-    assert!(truncated_row.contains('…'));
-    assert!(!truncated_row.contains(long_title));
-
-    let full = render_bug_list_table(&result, true, "http://example.com", false, false);
+    let table = render_bug_list_table(&result, "http://example.com", false, false);
     assert_eq!(
-        full.lines().count(),
+        table.lines().count(),
         2,
         "embedded newlines must not create extra rows"
     );
-    let full_row = full.lines().nth(1).expect("row");
-    assert!(full_row.contains(long_title));
-    assert!(full_row.contains("换行"));
-    assert!(!full_row.contains(long_assignee));
-    assert!(full_row.contains('…'));
+    let row = table.lines().nth(1).expect("row");
+    assert!(row.contains('…'));
+    assert!(!row.contains(long_title));
+    assert!(!row.contains(long_assignee));
 }
 
 #[test]
@@ -1064,6 +1130,7 @@ fn bug_table_title_uses_osc8_hyperlink_when_enabled() {
         status: "active".to_string(),
         opened_by: String::new(),
         opened_date: "2026-07-31 16:36:00".to_string(),
+        assigned_date: "2026-07-31 17:00:00".to_string(),
         assigned_to: "alice".to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),
@@ -1075,13 +1142,13 @@ fn bug_table_title_uses_osc8_hyperlink_when_enabled() {
         total: None,
     };
     let site = "http://example.com/zentao";
-    let linked = render_bug_list_table(&result, false, site, true, true);
+    let linked = render_bug_list_table(&result, site, true, true);
     let expected_url = "http://example.com/zentao/bug-view-57879.html";
     assert!(linked.contains(&format!("\x1b]8;;{expected_url}\x1b\\")));
     assert!(linked.contains("会议优化标题"));
     assert!(linked.contains("\x1b]8;;\x1b\\"));
 
-    let plain = render_bug_list_table(&result, false, site, false, false);
+    let plain = render_bug_list_table(&result, site, false, false);
     assert!(!plain.contains("\x1b]8;;"));
     assert!(!plain.contains('\x1b'));
     assert!(plain.contains("会议优化标题"));

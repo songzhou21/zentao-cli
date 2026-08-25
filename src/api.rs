@@ -78,9 +78,10 @@ impl ZentaoApi {
         cookie: &str,
         product_id: u64,
         form_params: &[(String, String)],
+        order_by: Option<&str>,
     ) -> Result<String> {
         self.submit_search_query(cookie, product_id, form_params)?;
-        self.fetch_browse_json(cookie, product_id)
+        self.fetch_browse_json(cookie, product_id, order_by)
     }
 
     fn submit_search_query(
@@ -143,10 +144,16 @@ impl ZentaoApi {
     }
 
     /// JSON browse view for the current `myQueryID` session. Includes `resolvedBy`.
-    pub fn fetch_browse_json(&self, cookie: &str, product_id: u64) -> Result<String> {
+    pub fn fetch_browse_json(
+        &self,
+        cookie: &str,
+        product_id: u64,
+        order_by: Option<&str>,
+    ) -> Result<String> {
         let url = format!(
-            "{}/bug-browse-{}-0-bySearch-myQueryID.json",
-            self.site_url, product_id
+            "{}{}",
+            self.site_url,
+            browse_search_json_path(product_id, order_by)
         );
         let (_, body) = self.fetch_text(&url, cookie, "获取搜索结果失败")?;
         Ok(body)
@@ -499,6 +506,15 @@ fn summarize_login_response(raw: &str) -> String {
 /// - `"resolvedBy"` → operator `=`
 /// - `"openedBuild"` → operator `=`
 /// - `"resolvedBuild"` → operator `=`
+fn browse_search_json_path(product_id: u64, order_by: Option<&str>) -> String {
+    match order_by.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(order) => {
+            format!("/bug-browse-{product_id}-0-bySearch-myQueryID-{order}.json")
+        }
+        None => format!("/bug-browse-{product_id}-0-bySearch-myQueryID.json"),
+    }
+}
+
 fn build_search_form(
     product_id: u64,
     action_url: &str,

@@ -14,16 +14,17 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 全局配置：`--site`、`--config`。
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
 - `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 100。要查已解决/关闭需显式 `-s`。`-s` / `--state` 可重复，最多三个值按 OR（`all` 不能与其他状态组合）。
-- `bug stats` 默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。无 `--by`，无 `--full-title`，无通用 `--group-by`。
+- `bug stats` 默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。无 `--by`，无通用 `--group-by`。
 - `bug list` / `bug stats` 都先 POST 与 list 相同的关键词搜索（`search-buildQuery.html`），再读浏览 JSON；不拉、不解析列表 HTML。
 - `bug stats` 两张表。主表：人员 / 激活 / 已解决 / 关闭 / 合计。激活按当前指派给；已解决 / 关闭按解决者；合计 = 激活+已解决+关闭（列加总）。写出量 = 已解决+关闭。无解决者的关闭单进 `(未解决)`。排序合计↓再激活↓再已解决↓。待验证单独一张表（当前指派且状态 `resolved`），空则不输出。JSON：`rows` 为 `assignee,active,solved,closed,total`；`pending.rows` 为 `assignee,resolved`（`resolved`=待验证）。
 - `list`/`stats` 解决日期快捷：`--week`（周一～周日）、`--month`（本月）、`--day`（今天）；映射为 `resolvedDate` 区间，与 `--resolved-from/to` 互斥。
 - `list`/`stats` 版本筛选：`--opened-build`（影响版本）、`--resolved-build`（解决版本）；数字当作版本 ID 原样提交；非数字按候选名称唯一包含匹配后转 ID 再搜。多个/零个匹配时报错，并指向 `zentao bug candidates --build`。对应禅道 `openedBuild` / `resolvedBuild`，操作符 `=`。
 - JSON 使用 `--json[=fields]`；裸 `--json` 输出全部字段，指定字段必须使用 `--json=id,title`。
-- 列表 JSON 日期为浏览接口完整时间（如 `2026-08-20 11:30:31`）；`resolution` 为禅道代码（如 `fixed`）；`confirmed` 为布尔（`"1"` → true，其余为 false）；人员用显示名；含 `resolvedBy`（显示名，未解决为 `null`）。
-- 列表表头为中文：编号 / 状态 / 创建者 / 创建日期（`openedDate` 完整时间，非指派日期） / 标题 / 指派给；默认截断标题（显示宽度 65）；`--full-title` 仅展开表格标题为完整单行，不改变 `--title` 搜索条件，不放开指派给 / 创建者截断，与 `--json` 可并用（JSON 路径静默忽略）。
+- 列表 JSON 日期为浏览接口完整时间（如 `2026-08-20 11:30:31`）；含 `openedDate` 与 `assignedDate`（空日期为 `null`）；`resolution` 为禅道代码（如 `fixed`）；`confirmed` 为布尔（`"1"` → true，其余为 false）；人员用显示名；含 `resolvedBy`（显示名，未解决为 `null`）。
+- `bug list` 支持 `--sort assignedDate` 与 `--order desc|asc`（有 `--sort` 时默认 `desc`）；未指定 `--sort` 时保持禅道默认顺序。单独 `--order` 报错。排序走禅道 `orderBy`，使 `-L` 按该字段取前 N 条。`stats` 不提供 `--sort`。
+- 列表表头为中文：编号 / 状态 / 创建者 / 创建日期 / 标题 / 指派给 / 指派日期。表格日期省略年份（`08-20 11:30:31`）；JSON 仍为完整时间。默认截断标题（显示宽度 65）；不放开指派给 / 创建者截断。无 `--full-title`。
 - 列表表格在 stdout 为 TTY 时，TITLE 默认包 OSC 8 超链接（目标与 JSON `url` 相同的 `bug-view-<id>.html`）；可见文本不变、不加下划线/变色；管道/重定向不输出 OSC；不跟 `NO_COLOR` 绑死。
-- `--plain` 关闭表格交互装饰（OSC 8 超链接、表头/状态颜色），输出纯文本；可与 `--full-title` 并用；`--json` 路径静默忽略。
+- `--plain` 关闭表格交互装饰（OSC 8 超链接、表头/状态颜色），输出纯文本；`--json` 路径静默忽略。
 - 仅暴露经验证的禅道字段；不提供模拟 GitHub 查询语法的 `--search`。
 
 ## 开发规范

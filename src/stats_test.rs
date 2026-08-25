@@ -19,6 +19,7 @@ fn sample_bug_row(id: u64, status: &str, assigned_to: &str) -> search::BugRow {
         status: status.to_string(),
         opened_by: String::new(),
         opened_date: String::new(),
+        assigned_date: String::new(),
         assigned_to: assigned_to.to_string(),
         resolved_by: String::new(),
         resolved_date: String::new(),

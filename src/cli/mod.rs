@@ -29,8 +29,8 @@ pub(crate) use bug::list::{
 #[cfg(test)]
 pub(crate) use bug::{
     apply_result_limit, build_search_field_params, calendar_month_bounds, reporting_week_bounds,
-    resolve_resolved_date_range, validate_search_group_limits, BugArgs, BugSearchQuery, BugState,
-    BugSubCommands,
+    resolve_resolved_date_range, validate_search_group_limits, validate_sort_args, BugArgs,
+    BugSearchQuery, BugSortField, BugSortOrder, BugState, BugSubCommands,
 };
 #[cfg(test)]
 pub(crate) use config::{set_config_value, ConfigKey};

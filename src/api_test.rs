@@ -896,7 +896,7 @@ fn search_browse_json_skips_html_table_page() {
     ];
     let (site, seen_cookie, handle) = spawn_test_server(plans);
     let api = ZentaoApi::new(&site).expect("api should build");
-    let got = api.search_browse_json("zp=test", 92, &[]);
+    let got = api.search_browse_json("zp=test", 92, &[], None);
     handle.join().expect("server should join");
     let sent = seen_cookie.lock().expect("lock should succeed").clone();
     assert!(
@@ -938,7 +938,7 @@ fn fetch_browse_json_requests_json_view() {
     }];
     let (site, seen_cookie, handle) = spawn_test_server(plans);
     let api = ZentaoApi::new(&site).expect("api should build");
-    let got = api.fetch_browse_json("zp=test", 92);
+    let got = api.fetch_browse_json("zp=test", 92, None);
     handle.join().expect("server should join");
     let sent = seen_cookie.lock().expect("lock should succeed").clone();
     assert!(
@@ -946,5 +946,45 @@ fn fetch_browse_json_requests_json_view() {
         "cookie header not sent: {sent:?}"
     );
     let body = got.expect("json browse should succeed");
+    assert!(body.contains("bugs"), "unexpected body: {body}");
+}
+
+#[test]
+fn fetch_browse_json_appends_order_by_to_path() {
+    let plans = vec![ResponsePlan {
+        path: "/bug-browse-92-0-bySearch-myQueryID-assignedDate_desc.json",
+        status: 200,
+        location: None,
+        body: r#"{"status":"success","data":"{\"bugs\":[],\"users\":{}}"}"#,
+    }];
+    let (site, _, handle) = spawn_test_server(plans);
+    let api = ZentaoApi::new(&site).expect("api should build");
+    let got = api.fetch_browse_json("zp=test", 92, Some("assignedDate_desc"));
+    handle.join().expect("server should join");
+    let body = got.expect("ordered json browse should succeed");
+    assert!(body.contains("bugs"), "unexpected body: {body}");
+}
+
+#[test]
+fn search_browse_json_forwards_order_by() {
+    let plans = vec![
+        ResponsePlan {
+            path: "/search-buildQuery.html",
+            status: 200,
+            location: None,
+            body: "<html>ok</html>",
+        },
+        ResponsePlan {
+            path: "/bug-browse-92-0-bySearch-myQueryID-assignedDate_asc.json",
+            status: 200,
+            location: None,
+            body: r#"{"status":"success","data":"{\"bugs\":[],\"users\":{}}"}"#,
+        },
+    ];
+    let (site, _, handle) = spawn_test_server(plans);
+    let api = ZentaoApi::new(&site).expect("api should build");
+    let got = api.search_browse_json("zp=test", 92, &[], Some("assignedDate_asc"));
+    handle.join().expect("server should join");
+    let body = got.expect("ordered search should succeed");
     assert!(body.contains("bugs"), "unexpected body: {body}");
 }

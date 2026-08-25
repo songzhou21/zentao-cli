@@ -17,6 +17,7 @@ zentao bug list --title 会议 --json=id,title,state,assignee,url
 zentao bug list -a zhousong -s active -L 100 --json=id,title,state,assignee
 zentao bug list --opened-by chenjie --opened-by niuweilong -s active --json=id,title,state,openedBy,assignee,url
 zentao bug list --module 1144 -s active -s resolved --json=id,title,state,assignee,url
+zentao bug list --module 1144 -s active --sort assignedDate --json=id,title,assignedDate,assignee,url
 zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 -s all --json
 ```
 
@@ -24,9 +25,10 @@ zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 
 - `--opened-build` / `--resolved-build`: numbers are used as build IDs directly; strings are matched by unique substring against candidates — on multiple matches, use `bug candidates --build` to find the `value`.
 - `-s` (state): `active` (default) / `resolved` / `closed` / `all`. Repeat for OR, e.g. `-s active -s resolved`. Must be set explicitly when querying resolved/closed bugs or date ranges.
 - Two search groups, 3 slots each; repeating two of `--title` / `--opened-by` / `-s` fills both groups. The default `active` state occupies one slot. Use `--state all` to free it when slots are full.
+- `--sort assignedDate` with optional `--order desc|asc` (default `desc`). `--order` requires `--sort`. Unspecified `--sort` keeps Zentao's default order.
 - `--json` requires `=` for field selection: `--json=id,title`; bare `--json` = all fields.
-- Fields: `id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignee` `resolvedBy` `resolvedDate` `resolution` `deadline` `url`.
-- Dates are full timestamps (e.g. `2026-08-20 11:30:31`). People fields are display names (not account names).
+- Fields: `id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignedDate` `assignee` `resolvedBy` `resolvedDate` `resolution` `deadline` `url`.
+- Dates are full timestamps in JSON (e.g. `2026-08-20 11:30:31`); human tables omit the year and show `08-20 11:30:31`. The human table columns are 编号 / 状态 / 创建者 / 创建日期 / 标题 / 指派给 / 指派日期. People fields are display names (not account names).
 
 ## Candidates
 

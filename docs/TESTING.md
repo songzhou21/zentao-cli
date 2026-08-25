@@ -47,6 +47,7 @@
 - `tests/fixtures/search/browse_bysearch_myqueryid.json`（`bug-browse-…-bySearch-myQueryID.json` 实抓）
 - `tests/fixtures/search/browse_assigned_to_zhousong.json`（`--resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 -L 5` 实抓；关闭后 `assignedTo` 为 Closed）
 - `tests/fixtures/search/browse_empty.json`（无匹配标题实抓，`bugs` 为空数组）
+- `tests/fixtures/search/browse_assigned_date_desc.json`（`--module 1144 -s active --sort assignedDate -L 5` 实抓；`assignedDate` 倒序，编号非 id 倒序）
 
 更新浏览 JSON fixture（需本机 Cookie 可用）：
 
@@ -57,6 +58,8 @@ ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_assigned_to_zhousong.json \
   zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 -L 5
 ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_empty.json \
   zentao bug list --title __zentao_cli_no_match_xyz_9f3a2__ -L 5
+ZENTAO_DEBUG_JSON=tests/fixtures/search/browse_assigned_date_desc.json \
+  zentao bug list --module 1144 -s active --sort assignedDate -L 5
 ```
 
 然后按新样本更新 `parses_browse_json_fixture` / `parses_assigned_browse_json_fixture` / `parses_empty_browse_json_fixture` / `aggregate_browse_json_fixture` 中的条数断言。

@@ -16,6 +16,7 @@ fn parses_browse_json_fixture() {
     assert_eq!(active.resolved_by, "");
     assert_eq!(active.confirmed, "1");
     assert_eq!(active.opened_date, "2026-08-19 10:56:50");
+    assert_eq!(active.assigned_date, "2026-08-19 15:41:27");
     assert_eq!(active.resolution, "");
     assert!(active.title.contains("会议优化5.1"));
 
@@ -28,6 +29,7 @@ fn parses_browse_json_fixture() {
     assert_eq!(resolved.assigned_to, "崔文波");
     assert_eq!(resolved.resolved_by, "周松");
     assert_eq!(resolved.opened_date, "2026-08-14 15:31:29");
+    assert_eq!(resolved.assigned_date, "2026-08-18 10:26:48");
     assert_eq!(resolved.resolved_date, "2026-08-18 10:12:35");
     assert_eq!(resolved.resolution, "fixed");
 
@@ -74,6 +76,25 @@ fn parses_empty_browse_json_fixture() {
     let result = parse_browse_json(body).expect("parse");
     assert!(result.bugs.is_empty());
     assert_eq!(result.total.as_deref(), Some("本页共 0 个 Bug，未解决 0。"));
+}
+
+#[test]
+fn parses_assigned_date_desc_browse_json_fixture() {
+    let body = include_str!("../tests/fixtures/search/browse_assigned_date_desc.json");
+    let result = parse_browse_json(body).expect("parse");
+    assert_eq!(result.bugs.len(), 5);
+    assert_eq!(result.bugs[0].id, 58555);
+    assert_eq!(result.bugs[0].assigned_date, "2026-08-25 14:28:44");
+    assert_eq!(result.bugs[4].id, 56868);
+    let dates: Vec<&str> = result
+        .bugs
+        .iter()
+        .map(|bug| bug.assigned_date.as_str())
+        .collect();
+    let mut sorted = dates.clone();
+    sorted.sort_by(|a, b| b.cmp(a));
+    assert_eq!(dates, sorted);
+    assert_eq!(result.total.as_deref(), Some("本页共 5 个 Bug，未解决 5。"));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use crate::cli::bug::{execute_bug_search, BugSearchQuery, BugState};
+use crate::cli::bug::{execute_bug_search, BugSearchQuery, BugSortField, BugSortOrder, BugState};
 use crate::cli::{
     ansi_enabled, parse_json_fields, print_json, style_header, style_warning,
     validate_optional_json_fields, GlobalArgs,
@@ -17,8 +17,8 @@ const BUG_LIST_STATE_WIDTH: usize = 9;
 const BUG_LIST_OPENED_BY_WIDTH: usize = 10;
 const BUG_LIST_TITLE_WIDTH: usize = 65;
 const BUG_LIST_ASSIGNEE_WIDTH: usize = 10;
-/// Fits browse-JSON timestamps like `2026-08-20 11:30:31`.
-const BUG_LIST_OPENED_DATE_WIDTH: usize = 19;
+/// Human table dates omit the year: `08-20 11:30:31`.
+const BUG_LIST_DATE_WIDTH: usize = 14;
 
 pub(crate) const LIST_JSON_FIELDS: &[&str] = &[
     "id",
@@ -29,6 +29,7 @@ pub(crate) const LIST_JSON_FIELDS: &[&str] = &[
     "confirmed",
     "openedBy",
     "openedDate",
+    "assignedDate",
     "assignee",
     "resolvedBy",
     "resolvedDate",
@@ -97,6 +98,14 @@ pub(crate) struct BugListArgs {
     )]
     pub(crate) state: Vec<BugState>,
 
+    /// 排序字段；第一期仅 assignedDate。未指定时保持禅道默认顺序
+    #[arg(long, value_enum, value_name = "FIELD")]
+    pub(crate) sort: Option<BugSortField>,
+
+    /// 排序方向：asc / desc。需与 --sort 同时使用；有 --sort 时默认 desc
+    #[arg(long, value_enum, value_name = "ORDER")]
+    pub(crate) order: Option<BugSortOrder>,
+
     /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
     #[arg(long, env = "ZENTAO_PRODUCT", value_name = "ID")]
     pub(crate) product: Option<u64>,
@@ -111,15 +120,11 @@ pub(crate) struct BugListArgs {
     )]
     pub(crate) limit: u32,
 
-    /// 表格输出时展示完整标题（默认按显示宽度截断）；不影响搜索条件或 JSON
-    #[arg(long, default_value_t = false)]
-    pub(crate) full_title: bool,
-
-    /// 纯文本表格：关闭超链接、颜色等交互装饰（仍可与 --full-title 并用）
+    /// 纯文本表格：关闭超链接、颜色等交互装饰
     #[arg(long, default_value_t = false)]
     pub(crate) plain: bool,
 
-    /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignee,resolvedBy,resolvedDate,resolution,deadline,url
+    /// 输出 JSON；可选指定字段：id,title,state,severity,priority,confirmed,openedBy,openedDate,assignedDate,assignee,resolvedBy,resolvedDate,resolution,deadline,url
     #[arg(
         long,
         num_args = 0..=1,
@@ -153,7 +158,6 @@ pub(crate) fn run(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
             "{}",
             render_bug_list_table_with_warning(
                 &result,
-                args.full_title,
                 &site_url,
                 !plain && hyperlinks_enabled(),
                 !plain,
@@ -206,17 +210,15 @@ pub(crate) fn render_list_json(
 #[cfg(test)]
 pub(crate) fn render_bug_list_table(
     result: &search::SearchResult,
-    full_title: bool,
     site: &str,
     hyperlinks: bool,
     styled: bool,
 ) -> String {
-    render_bug_list_table_with_warning(result, full_title, site, hyperlinks, styled, None)
+    render_bug_list_table_with_warning(result, site, hyperlinks, styled, None)
 }
 
 fn render_bug_list_table_with_warning(
     result: &search::SearchResult,
-    full_title: bool,
     site: &str,
     hyperlinks: bool,
     styled: bool,
@@ -227,13 +229,14 @@ fn render_bug_list_table_with_warning(
     }
     // Human table headers are Chinese (same convention as bug stats); JSON field names stay English.
     let header = format!(
-        "{} {} {} {} {} {}",
+        "{} {} {} {} {} {} {}",
         pad_to_display_width("编号", BUG_LIST_ID_WIDTH),
         pad_to_display_width("状态", BUG_LIST_STATE_WIDTH),
         pad_to_display_width("创建者", BUG_LIST_OPENED_BY_WIDTH),
-        pad_to_display_width("创建日期", BUG_LIST_OPENED_DATE_WIDTH),
+        pad_to_display_width("创建日期", BUG_LIST_DATE_WIDTH),
         pad_to_display_width("标题", BUG_LIST_TITLE_WIDTH),
         pad_to_display_width("指派给", BUG_LIST_ASSIGNEE_WIDTH),
+        pad_to_display_width("指派日期", BUG_LIST_DATE_WIDTH),
     );
     let mut out = format!(
         "{}\n",
@@ -251,22 +254,19 @@ fn render_bug_list_table_with_warning(
         } else {
             state_cell
         };
-        let mut title = if full_title {
-            normalize_table_cell(&bug.title)
-        } else {
-            truncate_for_table(&bug.title, BUG_LIST_TITLE_WIDTH)
-        };
+        let mut title = truncate_for_table(&bug.title, BUG_LIST_TITLE_WIDTH);
         if hyperlinks {
             title = osc8_hyperlink(&view::canonical_bug_url(site, bug.id), &title);
         }
         out.push_str(&format!(
-            "{} {} {} {} {} {}\n",
+            "{} {} {} {} {} {} {}\n",
             pad_to_display_width(&bug.id.to_string(), BUG_LIST_ID_WIDTH),
             state,
             truncate_for_table(&bug.opened_by, BUG_LIST_OPENED_BY_WIDTH),
-            pad_to_display_width(bug.opened_date.trim(), BUG_LIST_OPENED_DATE_WIDTH),
+            pad_to_display_width(&format_table_date(&bug.opened_date), BUG_LIST_DATE_WIDTH),
             title,
             truncate_for_table(&bug.assigned_to, BUG_LIST_ASSIGNEE_WIDTH),
+            pad_to_display_width(&format_table_date(&bug.assigned_date), BUG_LIST_DATE_WIDTH),
         ));
     }
     if io::stdout().is_terminal() {
@@ -301,6 +301,7 @@ fn list_json_value(bug: &search::BugRow, field: &str, site: &str) -> Value {
         "confirmed" => json!(is_confirmed(&bug.confirmed)),
         "openedBy" => nullable_text(&bug.opened_by),
         "openedDate" => nullable_date(&bug.opened_date),
+        "assignedDate" => nullable_date(&bug.assigned_date),
         "assignee" => nullable_text(&bug.assigned_to),
         "resolvedBy" => nullable_text(&bug.resolved_by),
         "resolvedDate" => nullable_date(&bug.resolved_date),
@@ -359,6 +360,17 @@ fn colorize_state(value: &str, state: &str) -> String {
         _ => "31",
     };
     crate::cli::style_ansi(value, color)
+}
+
+/// Human table dates omit the year: `2026-08-20 11:30:31` → `08-20 11:30:31`.
+fn format_table_date(raw: &str) -> String {
+    let value = raw.trim();
+    match value.split_once('-') {
+        Some((year, rest)) if year.len() == 4 && year.chars().all(|c| c.is_ascii_digit()) => {
+            rest.to_string()
+        }
+        _ => value.to_string(),
+    }
 }
 
 pub(crate) fn normalize_table_cell(value: &str) -> String {
