@@ -87,9 +87,15 @@ pub(crate) struct BugListArgs {
     #[arg(long, value_name = "BUILD")]
     pub(crate) resolved_build: Option<String>,
 
-    /// Bug 状态；默认 active
-    #[arg(short = 's', long, value_enum, value_name = "STATE", default_value_t = BugState::Active)]
-    pub(crate) state: BugState,
+    /// Bug 状态；可重复传入，多个值按 OR。默认 active。例如 -s active -s resolved
+    #[arg(
+        short = 's',
+        long,
+        value_enum,
+        value_name = "STATE",
+        default_value = "active"
+    )]
+    pub(crate) state: Vec<BugState>,
 
     /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
     #[arg(long, env = "ZENTAO_PRODUCT", value_name = "ID")]
@@ -99,7 +105,7 @@ pub(crate) struct BugListArgs {
     #[arg(
         short = 'L',
         long,
-        default_value_t = 30,
+        default_value_t = 100,
         value_parser = clap::value_parser!(u32).range(1..),
         value_name = "N"
     )]
@@ -128,22 +134,30 @@ pub(crate) fn run(args: BugListArgs, global: &GlobalArgs) -> Result<()> {
     validate_optional_json_fields(args.json.as_deref(), LIST_JSON_FIELDS)?;
     let query = BugSearchQuery::from(&args);
     let (site_url, result) = execute_bug_search(&query, global)?;
-    if let Some(warning) = truncated_warning(args.limit, result.bugs.len()) {
-        eprintln!("{}", style_warning(&warning));
-    }
+    let warning = truncated_warning(args.limit, result.bugs.len());
     if let Some(fields) = args.json.as_deref() {
+        if let Some(warning) = warning.as_deref() {
+            eprintln!("{}", style_warning(warning));
+        }
         let json = render_list_json(&result, &site_url, fields)?;
         print_json(&json)?;
     } else {
         let plain = args.plain;
+        if let Some(warning) = warning.as_deref() {
+            // A piped table has no summary footer, so keep the warning visible on stderr.
+            if !io::stdout().is_terminal() || result.total.is_none() {
+                eprintln!("{}", style_warning(warning));
+            }
+        }
         print!(
             "{}",
-            render_bug_list_table(
+            render_bug_list_table_with_warning(
                 &result,
                 args.full_title,
                 &site_url,
                 !plain && hyperlinks_enabled(),
                 !plain,
+                warning.as_deref(),
             )
         );
         if let Some(line) = stats::format_resolved_date_range_line(
@@ -189,12 +203,24 @@ pub(crate) fn render_list_json(
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn render_bug_list_table(
     result: &search::SearchResult,
     full_title: bool,
     site: &str,
     hyperlinks: bool,
     styled: bool,
+) -> String {
+    render_bug_list_table_with_warning(result, full_title, site, hyperlinks, styled, None)
+}
+
+fn render_bug_list_table_with_warning(
+    result: &search::SearchResult,
+    full_title: bool,
+    site: &str,
+    hyperlinks: bool,
+    styled: bool,
+    warning: Option<&str>,
 ) -> String {
     if result.bugs.is_empty() {
         return "没有找到 Bug\n".to_string();
@@ -245,7 +271,16 @@ pub(crate) fn render_bug_list_table(
     }
     if io::stdout().is_terminal() {
         if let Some(total) = result.total.as_deref() {
-            out.push_str(&format!("\n{}\n", total.trim()));
+            let total = total.trim();
+            out.push_str(&format!("\n{}\n", total));
+            if let Some(warning) = warning {
+                let warning = if styled {
+                    crate::cli::style_ansi(warning, "1;33")
+                } else {
+                    warning.to_string()
+                };
+                out.push_str(&format!("{}\n", warning));
+            }
         }
     }
     out

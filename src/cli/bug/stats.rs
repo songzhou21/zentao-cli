@@ -56,9 +56,9 @@ pub(crate) struct BugStatsArgs {
     #[arg(long, value_name = "BUILD")]
     pub(crate) resolved_build: Option<String>,
 
-    /// Bug 状态；默认 all（按指派人做全状态剖面）
-    #[arg(short = 's', long, value_enum, default_value_t = BugState::All)]
-    pub(crate) state: BugState,
+    /// Bug 状态；可重复传入，多个值按 OR。默认 all。例如 -s active -s resolved
+    #[arg(short = 's', long, value_enum, default_value = "all")]
+    pub(crate) state: Vec<BugState>,
 
     /// 产品 ID；未提供时从 ZENTAO_PRODUCT 或配置读取
     #[arg(long, env = "ZENTAO_PRODUCT", value_name = "ID")]

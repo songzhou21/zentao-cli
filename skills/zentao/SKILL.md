@@ -16,13 +16,14 @@ zentao bug list --json=id,title,state,assignee,url
 zentao bug list --title 会议 --json=id,title,state,assignee,url
 zentao bug list -a zhousong -s active -L 100 --json=id,title,state,assignee
 zentao bug list --opened-by chenjie --opened-by niuweilong -s active --json=id,title,state,openedBy,assignee,url
+zentao bug list --module 1144 -s active -s resolved --json=id,title,state,assignee,url
 zentao bug list --resolved-by zhousong --resolved-from 2026-07-01 --resolved-to 2026-07-31 -s all --json
 ```
 
-- `--title` / `--opened-by` each accept up to 3 values (OR). `--opened-by` takes user **account names**, not display names.
+- `--title` / `--opened-by` / `-s` each accept up to 3 values (OR). `--opened-by` takes user **account names**, not display names. `-s all` cannot combine with other states.
 - `--opened-build` / `--resolved-build`: numbers are used as build IDs directly; strings are matched by unique substring against candidates — on multiple matches, use `bug candidates --build` to find the `value`.
-- `-s` (state): `active` (default) / `resolved` / `closed` / `all`. Must be set explicitly when querying resolved/closed bugs or date ranges.
-- Two search groups, 3 slots each; the default `active` state occupies one slot. Use `--state all` to free it when slots are full.
+- `-s` (state): `active` (default) / `resolved` / `closed` / `all`. Repeat for OR, e.g. `-s active -s resolved`. Must be set explicitly when querying resolved/closed bugs or date ranges.
+- Two search groups, 3 slots each; repeating two of `--title` / `--opened-by` / `-s` fills both groups. The default `active` state occupies one slot. Use `--state all` to free it when slots are full.
 - `--json` requires `=` for field selection: `--json=id,title`; bare `--json` = all fields.
 - Fields: `id` `title` `state` `severity` `priority` `confirmed` `openedBy` `openedDate` `assignee` `resolvedBy` `resolvedDate` `resolution` `deadline` `url`.
 - Dates are full timestamps (e.g. `2026-08-20 11:30:31`). People fields are display names (not account names).

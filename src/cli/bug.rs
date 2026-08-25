@@ -31,7 +31,7 @@ pub(crate) enum BugSubCommands {
     Candidates(candidates::BugCandidatesArgs),
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum BugState {
     Active,
     Resolved,
@@ -62,7 +62,7 @@ pub(crate) struct BugSearchQuery {
     pub(crate) module: Option<String>,
     pub(crate) opened_build: Option<String>,
     pub(crate) resolved_build: Option<String>,
-    pub(crate) state: BugState,
+    pub(crate) state: Vec<BugState>,
     pub(crate) product: Option<u64>,
     pub(crate) limit: u32,
 }
@@ -87,7 +87,7 @@ impl From<&list::BugListArgs> for BugSearchQuery {
             module: args.module.clone(),
             opened_build: args.opened_build.clone(),
             resolved_build: args.resolved_build.clone(),
-            state: args.state,
+            state: args.state.clone(),
             product: args.product,
             limit: args.limit,
         }
@@ -114,7 +114,7 @@ impl From<&stats::BugStatsArgs> for BugSearchQuery {
             module: args.module.clone(),
             opened_build: args.opened_build.clone(),
             resolved_build: args.resolved_build.clone(),
-            state: args.state,
+            state: args.state.clone(),
             product: args.product,
             limit: args.limit,
         }
@@ -297,13 +297,14 @@ pub(crate) fn apply_result_limit(result: &mut search::SearchResult, limit: u32) 
 pub(crate) fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> {
     // Zentao search-buildQuery uses 2 groups with 3 slots each:
     // group1: slot1~3, group2: slot4~6.
-    // Multi-value --title / --opened-by each occupy one full group as OR.
+    // Multi-value --title / --opened-by / --state each occupy one full group as OR.
     let title_count = args.title.iter().filter(|v| !v.trim().is_empty()).count();
     let opened_by_count = args
         .opened_by
         .iter()
         .filter(|v| !v.trim().is_empty())
         .count();
+    let state_raw_count = args.state.len();
     if title_count > 3 {
         return Err(anyhow!(
             "重复 --title 最多支持 3 个值（当前 {} 个）",
@@ -316,93 +317,139 @@ pub(crate) fn validate_search_group_limits(args: &BugSearchQuery) -> Result<()> 
             opened_by_count
         ));
     }
+    if state_raw_count > 3 {
+        return Err(anyhow!(
+            "重复 --state 最多支持 3 个值（当前 {} 个）",
+            state_raw_count
+        ));
+    }
+    let has_all = args
+        .state
+        .iter()
+        .any(|state| matches!(state, BugState::All));
+    let state_values = status_search_values(&args.state);
+    if has_all && !state_values.is_empty() {
+        return Err(anyhow!("不能将 --state all 与其他状态组合"));
+    }
+    let state_count = state_values.len();
 
     let has_title_or = title_count >= 2;
     let has_opened_by_or = opened_by_count >= 2;
-    let mut other = 0usize;
+    let has_state_or = state_count >= 2;
+    let or_count = [has_title_or, has_opened_by_or, has_state_or]
+        .into_iter()
+        .filter(|flag| *flag)
+        .count();
+
+    let mut singles = 0usize;
     if args.module.is_some() {
-        other += 1;
+        singles += 1;
     }
     if args.assignee.is_some() {
-        other += 1;
+        singles += 1;
     }
     if args.resolved_by.is_some() {
-        other += 1;
-    }
-    if args.state.zentao_value().is_some() {
-        other += 1;
+        singles += 1;
     }
     if args.resolved_from.is_some() {
-        other += 1;
+        singles += 1;
     }
     if args.resolved_to.is_some() {
-        other += 1;
+        singles += 1;
     }
     if args.opened_build.is_some() {
-        other += 1;
+        singles += 1;
     }
     if args.resolved_build.is_some() {
-        other += 1;
+        singles += 1;
+    }
+    if title_count == 1 {
+        singles += 1;
+    }
+    if opened_by_count == 1 {
+        singles += 1;
+    }
+    if state_count == 1 {
+        singles += 1;
     }
 
-    if has_title_or && has_opened_by_or {
-        if other > 0 {
+    let hint = active_state_slot_hint(&args.state);
+    if or_count >= 3 {
+        return Err(anyhow!(
+            "重复 --title、重复 --opened-by 与重复 --state 超过两组 OR 条件。{}",
+            hint
+        ));
+    }
+    if or_count == 2 {
+        if singles > 0 {
             return Err(anyhow!(
-                "重复 --title 与重复 --opened-by 已分别占满两组条件槽，不能再叠加其他筛选。{}",
-                active_state_slot_hint(args.state),
+                "{}已分别占满两组条件槽，不能再叠加其他筛选。{}",
+                or_pair_labels(has_title_or, has_opened_by_or, has_state_or),
+                hint
             ));
         }
-    } else if has_title_or {
-        // group2 = title OR; group1 = other + single openedBy
-        let mut group1 = other;
-        if opened_by_count == 1 {
-            group1 += 1;
-        }
-        if group1 > 3 {
-            return Err(anyhow!(
-                "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）。{}",
-                group1,
-                title_count,
-                active_state_slot_hint(args.state),
-            ));
-        }
-    } else if has_opened_by_or {
-        // group2 = openedBy OR; group1 = other + single title
-        let mut group1 = other;
-        if title_count == 1 {
-            group1 += 1;
-        }
-        if group1 > 3 {
+    } else if or_count == 1 {
+        let group2 = if has_title_or {
+            title_count
+        } else if has_opened_by_or {
+            opened_by_count
+        } else {
+            state_count
+        };
+        if singles > 3 {
             return Err(anyhow!(
                 "每个搜索 group 最多支持 3 个条件（group1={}，group2={}）。{}",
-                group1,
-                opened_by_count,
-                active_state_slot_hint(args.state),
+                singles,
+                group2,
+                hint
             ));
         }
-    } else {
-        let mut total = other;
-        if title_count >= 1 {
-            total += 1;
-        }
-        if opened_by_count >= 1 {
-            total += 1;
-        }
-        if total > 6 {
-            return Err(anyhow!(
-                "当前搜索条件超过 6 个（实际 {} 个），请减少条件。{}",
-                total,
-                active_state_slot_hint(args.state),
-            ));
-        }
+    } else if singles > 6 {
+        return Err(anyhow!(
+            "当前搜索条件超过 6 个（实际 {} 个），请减少条件。{}",
+            singles,
+            hint
+        ));
     }
 
     Ok(())
 }
 
-fn active_state_slot_hint(state: BugState) -> &'static str {
-    if matches!(state, BugState::Active) {
+fn status_search_values(states: &[BugState]) -> Vec<&'static str> {
+    let mut values = Vec::new();
+    for state in states {
+        if let Some(value) = state.zentao_value() {
+            if !values.contains(&value) {
+                values.push(value);
+            }
+        }
+    }
+    values
+}
+
+fn or_pair_labels(title: bool, opened_by: bool, state: bool) -> String {
+    let mut names = Vec::new();
+    if title {
+        names.push("重复 --title");
+    }
+    if opened_by {
+        names.push("重复 --opened-by");
+    }
+    if state {
+        names.push("重复 --state");
+    }
+    match names.as_slice() {
+        [a, b] => format!("{a} 与 {b} "),
+        other => format!("{} ", other.join("、")),
+    }
+}
+
+fn active_state_slot_hint(states: &[BugState]) -> &'static str {
+    let values = status_search_values(states);
+    if values.len() == 1 && values[0] == "active" {
         "active 状态（list 默认）占用一个条件槽位；如不需要状态筛选，请使用 --state all 释放该槽位"
+    } else if values.len() >= 2 {
+        "重复 --state 占用一组条件槽；如不需要状态筛选，请使用 --state all 释放该槽位"
     } else {
         ""
     }
@@ -461,8 +508,13 @@ pub(crate) fn build_search_field_params(query: &BugSearchQuery) -> Vec<(String, 
     if let Some(ref build) = query.resolved_build {
         field_params.push(("resolvedBuild".to_string(), build.clone()));
     }
-    if let Some(status) = query.state.zentao_value() {
-        field_params.push(("status".to_string(), status.to_string()));
+    let status_values = status_search_values(&query.state);
+    if status_values.len() >= 2 {
+        for (idx, status) in status_values.iter().take(3).enumerate() {
+            field_params.push((format!("status_or_{}", idx + 1), (*status).to_string()));
+        }
+    } else if let Some(status) = status_values.first() {
+        field_params.push(("status".to_string(), (*status).to_string()));
     }
     field_params
 }

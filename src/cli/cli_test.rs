@@ -43,7 +43,7 @@ fn global_options_and_bug_list_parse() {
         }) => {
             assert_eq!(args.product, Some(92));
             assert_eq!(args.assignee.as_deref(), Some("zhousong"));
-            assert!(matches!(args.state, BugState::All));
+            assert_eq!(args.state, vec![BugState::All]);
             assert_eq!(args.limit, 50);
             assert_eq!(args.title, vec!["会议"]);
             assert!(!args.full_title);
@@ -63,7 +63,7 @@ fn bug_list_keeps_default_active_with_resolved_date_filters() {
         panic!("unexpected command");
     };
     let query = BugSearchQuery::from(&args);
-    assert!(matches!(query.state, BugState::Active));
+    assert_eq!(query.state, vec![BugState::Active]);
     assert!(query.resolved_from.is_some());
     assert!(query.resolved_to.is_some());
 
@@ -83,10 +83,7 @@ fn bug_list_keeps_default_active_with_resolved_date_filters() {
     else {
         panic!("unexpected command");
     };
-    assert!(matches!(
-        BugSearchQuery::from(&args).state,
-        BugState::Active
-    ));
+    assert_eq!(BugSearchQuery::from(&args).state, vec![BugState::Active]);
 
     let cli = Cli::try_parse_from(["zentao", "bug", "list", "--week", "-s", "all"]).expect("parse");
     let Commands::Bug(BugArgs {
@@ -95,7 +92,7 @@ fn bug_list_keeps_default_active_with_resolved_date_filters() {
     else {
         panic!("unexpected command");
     };
-    assert!(matches!(BugSearchQuery::from(&args).state, BugState::All));
+    assert_eq!(BugSearchQuery::from(&args).state, vec![BugState::All]);
 }
 
 #[test]
@@ -250,6 +247,20 @@ fn bug_candidates_module_table_uses_module_header() {
 #[test]
 fn bug_candidates_table_empty_message() {
     assert_eq!(render_candidates_table(&[], "版本"), "没有匹配的版本\n");
+}
+
+#[test]
+fn bug_list_defaults_to_state_active_and_limit_100() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list"]).expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::List(args),
+        }) => {
+            assert_eq!(args.state, vec![BugState::Active]);
+            assert_eq!(args.limit, 100);
+        }
+        _ => panic!("unexpected command"),
+    }
 }
 
 #[test]
@@ -425,13 +436,121 @@ fn title_or_and_opened_by_or_reject_extra_filters() {
 }
 
 #[test]
+fn bug_list_parses_repeatable_state() {
+    let cli = Cli::try_parse_from([
+        "zentao", "bug", "list", "--module", "1144", "-s", "active", "-s", "resolved",
+    ])
+    .expect("should parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::List(args),
+        }) => {
+            assert_eq!(args.state, vec![BugState::Active, BugState::Resolved]);
+            let query = BugSearchQuery::from(&args);
+            validate_search_group_limits(&query).expect("module + state OR fits");
+            let params = build_search_field_params(&query);
+            assert!(params
+                .iter()
+                .any(|(k, v)| k == "status_or_1" && v == "active"));
+            assert!(params
+                .iter()
+                .any(|(k, v)| k == "status_or_2" && v == "resolved"));
+            assert!(!params.iter().any(|(k, _)| k == "status"));
+            assert!(params.iter().any(|(k, v)| k == "module" && v == "1144"));
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn state_more_than_three_rejected() {
+    let cli = Cli::try_parse_from([
+        "zentao", "bug", "list", "-s", "active", "-s", "resolved", "-s", "closed", "-s", "active",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("4 state values exceed max");
+    assert!(error.to_string().contains("--state"));
+}
+
+#[test]
+fn state_all_cannot_mix_with_other_states() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "list", "-s", "all", "-s", "active"])
+        .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("all mixed with active");
+    assert!(error.to_string().contains("all"));
+}
+
+#[test]
+fn title_or_and_state_or_reject_extra_filters() {
+    let cli = Cli::try_parse_from([
+        "zentao", "bug", "list", "--title", "A", "--title", "B", "-s", "active", "-s", "resolved",
+        "--module", "1144",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("title OR + state OR plus module should fail");
+    assert!(error.to_string().contains("不能再叠加"));
+}
+
+#[test]
+fn three_or_groups_rejected() {
+    let cli = Cli::try_parse_from([
+        "zentao",
+        "bug",
+        "list",
+        "--title",
+        "A",
+        "--title",
+        "B",
+        "--opened-by",
+        "chenjie",
+        "--opened-by",
+        "niuweilong",
+        "-s",
+        "active",
+        "-s",
+        "resolved",
+    ])
+    .expect("should parse");
+    let Commands::Bug(BugArgs {
+        command: BugSubCommands::List(args),
+    }) = cli.command
+    else {
+        panic!("unexpected command");
+    };
+    let error = validate_search_group_limits(&BugSearchQuery::from(&args))
+        .expect_err("three OR groups exceed two search groups");
+    assert!(error.to_string().contains("超过两组"));
+}
+
+#[test]
 fn bug_stats_defaults_to_state_all_and_limit_1000() {
     let cli = Cli::try_parse_from(["zentao", "bug", "stats"]).expect("should parse");
     match cli.command {
         Commands::Bug(BugArgs {
             command: BugSubCommands::Stats(args),
         }) => {
-            assert!(matches!(args.state, BugState::All));
+            assert_eq!(args.state, vec![BugState::All]);
             assert_eq!(args.limit, 1000);
             assert!(!args.plain);
             assert!(args.json.is_none());
@@ -589,7 +708,7 @@ fn bug_stats_parses_shared_filters_and_plain() {
             assert_eq!(args.title, vec!["会议"]);
             assert_eq!(args.assignee.as_deref(), Some("zhousong"));
             assert_eq!(args.module.as_deref(), Some("1099"));
-            assert!(matches!(args.state, BugState::Active));
+            assert_eq!(args.state, vec![BugState::Active]);
             assert_eq!(args.limit, 50);
             assert!(args.plain);
         }

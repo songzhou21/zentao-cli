@@ -571,6 +571,70 @@ fn build_search_form_with_opened_by_or_and_title_or() {
 }
 
 #[test]
+fn build_search_form_with_status_or_group() {
+    let overrides = vec![
+        ("module".to_string(), "1144".to_string()),
+        ("status_or_1".to_string(), "active".to_string()),
+        ("status_or_2".to_string(), "resolved".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("module"));
+    assert_eq!(find("operator1"), Some("belong"));
+    assert_eq!(find("value1"), Some("1144"));
+
+    assert_eq!(find("groupAndOr"), Some("and"));
+    assert_eq!(find("field4"), Some("status"));
+    assert_eq!(find("operator4"), Some("="));
+    assert_eq!(find("value4"), Some("active"));
+    assert_eq!(find("andOr5"), Some("or"));
+    assert_eq!(find("field5"), Some("status"));
+    assert_eq!(find("value5"), Some("resolved"));
+}
+
+#[test]
+fn build_search_form_with_title_or_and_status_or() {
+    let overrides = vec![
+        ("title_or_1".to_string(), "系统测试".to_string()),
+        ("title_or_2".to_string(), "线上问题".to_string()),
+        ("status_or_1".to_string(), "active".to_string()),
+        ("status_or_2".to_string(), "resolved".to_string()),
+    ];
+    let form = build_search_form(
+        92,
+        "/zentao/bug-browse-92-0-bySearch-myQueryID.html",
+        &overrides,
+    );
+    let find = |k: &str| {
+        form.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.as_str())
+    };
+
+    assert_eq!(find("field1"), Some("title"));
+    assert_eq!(find("value1"), Some("系统测试"));
+    assert_eq!(find("andOr2"), Some("or"));
+    assert_eq!(find("field2"), Some("title"));
+    assert_eq!(find("value2"), Some("线上问题"));
+
+    assert_eq!(find("groupAndOr"), Some("and"));
+    assert_eq!(find("field4"), Some("status"));
+    assert_eq!(find("value4"), Some("active"));
+    assert_eq!(find("andOr5"), Some("or"));
+    assert_eq!(find("field5"), Some("status"));
+    assert_eq!(find("value5"), Some("resolved"));
+}
+
+#[test]
 fn build_search_form_with_opened_build() {
     let overrides = vec![
         ("openedBuild".to_string(), "982".to_string()),

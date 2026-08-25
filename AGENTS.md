@@ -13,7 +13,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 不保留 `zentao search`、`zentao bug show` 或 `zentao image` 兼容入口。
 - 全局配置：`--site`、`--config`。
 - `bug list` / `bug stats` 的 Product 必须来自 `--product`、`ZENTAO_PRODUCT` 或配置，禁止硬编码产品 ID。
-- `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 30。要查已解决/关闭需显式 `-s`。
+- `bug list` 默认状态为 `active`，限制参数为 `-L, --limit`，默认 100。要查已解决/关闭需显式 `-s`。`-s` / `--state` 可重复，最多三个值按 OR（`all` 不能与其他状态组合）。
 - `bug stats` 默认 `--state all`、`-L 1000`；样本制（与 limit 相同上限，不保证全集）；触顶时 stderr 警告。无 `--by`，无 `--full-title`，无通用 `--group-by`。
 - `bug list` / `bug stats` 都先 POST 与 list 相同的关键词搜索（`search-buildQuery.html`），再读浏览 JSON；不拉、不解析列表 HTML。
 - `bug stats` 两张表。主表：人员 / 激活 / 已解决 / 关闭 / 合计。激活按当前指派给；已解决 / 关闭按解决者；合计 = 激活+已解决+关闭（列加总）。写出量 = 已解决+关闭。无解决者的关闭单进 `(未解决)`。排序合计↓再激活↓再已解决↓。待验证单独一张表（当前指派且状态 `resolved`），空则不输出。JSON：`rows` 为 `assignee,active,solved,closed,total`；`pending.rows` 为 `assignee,resolved`（`resolved`=待验证）。
@@ -49,7 +49,8 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 - 禅道查询仍使用两组、各三个条件槽位。
 - 重复 `--title` 最多三个值，按 OR；可与最多三个非标题条件组合。
 - 重复 `--opened-by` 最多三个值（用户账号，非中文显示名），按 OR；可与最多三个非创建者条件组合。
-- 同时重复 `--title` 与 `--opened-by` 时两组槽位都被 OR 占满，不能再叠加其他筛选（含默认 `active` 状态，需 `--state all`）。
+- 重复 `--state` / `-s` 最多三个值（`active` / `resolved` / `closed`），按 OR；`all` 不能与其他状态组合。两种及以上状态占满一组槽位。
+- 同时重复 `--title` / `--opened-by` / `--state` 中的两个时两组槽位都被 OR 占满，不能再叠加其他筛选（含默认 `active` 状态，需 `--state all`）。
 - 默认 `--state active` 也占用一个条件槽位；不需状态筛选时使用 `--state all` 释放该槽位。
 - 不要重新加入标题前缀“模块分组”：它不是禅道模块字段。
 

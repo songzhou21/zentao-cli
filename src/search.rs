@@ -58,6 +58,7 @@ pub fn parse_browse_json(body: &str) -> Result<SearchResult> {
         .get("summary")
         .and_then(Value::as_str)
         .map(strip_html_tags)
+        .map(|s| s.replace("个Bug", "个 Bug"))
         .filter(|s| !s.is_empty());
     Ok(SearchResult { bugs, total })
 }

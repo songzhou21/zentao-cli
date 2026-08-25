@@ -495,6 +495,7 @@ fn summarize_login_response(raw: &str) -> String {
 /// - `"resolvedDate_from"` → operator `>=`
 /// - `"resolvedDate_to"` → operator `<=`
 /// - `"status"` → operator `=`
+/// - `"status_or_1"` + `"status_or_2"`(+ `"status_or_3"`) → one group (`status =`, andOr=or)
 /// - `"resolvedBy"` → operator `=`
 /// - `"openedBuild"` → operator `=`
 /// - `"resolvedBuild"` → operator `=`
@@ -634,6 +635,12 @@ fn build_search_form(
     opened_by_or_values.truncate(3);
     let use_opened_by_or = opened_by_or_values.len() >= 2;
 
+    let mut status_or_values: Vec<String> = (1..=3)
+        .filter_map(|n| get(&format!("status_or_{n}")))
+        .collect();
+    status_or_values.truncate(3);
+    let use_status_or = status_or_values.len() >= 2;
+
     let mut set_slot = |idx: usize,
                         and_or: Option<&'static str>,
                         field: &'static str,
@@ -716,6 +723,78 @@ fn build_search_form(
         if let Some(v3) = title_or_values.get(2) {
             set_slot(5, Some("or"), "title", "include", v3.clone());
         }
+    } else if use_title_or && use_status_or {
+        // Both groups used for OR: group1 title, group2 status.
+        set_slot(
+            0,
+            Some("AND"),
+            "title",
+            "include",
+            title_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            1,
+            Some("or"),
+            "title",
+            "include",
+            title_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = title_or_values.get(2) {
+            set_slot(2, Some("or"), "title", "include", v3.clone());
+        }
+        set_slot(
+            3,
+            Some("AND"),
+            "status",
+            "=",
+            status_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            4,
+            Some("or"),
+            "status",
+            "=",
+            status_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = status_or_values.get(2) {
+            set_slot(5, Some("or"), "status", "=", v3.clone());
+        }
+    } else if use_opened_by_or && use_status_or {
+        // Both groups used for OR: group1 openedBy, group2 status.
+        set_slot(
+            0,
+            Some("AND"),
+            "openedBy",
+            "=",
+            opened_by_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            1,
+            Some("or"),
+            "openedBy",
+            "=",
+            opened_by_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = opened_by_or_values.get(2) {
+            set_slot(2, Some("or"), "openedBy", "=", v3.clone());
+        }
+        set_slot(
+            3,
+            Some("AND"),
+            "status",
+            "=",
+            status_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            4,
+            Some("or"),
+            "status",
+            "=",
+            status_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = status_or_values.get(2) {
+            set_slot(5, Some("or"), "status", "=", v3.clone());
+        }
     } else if use_title_or {
         // - group1 (slot1~3): non-title filters (incl. single openedBy)
         // - group2 (slot4~6): title include A [or B] [or C]
@@ -769,6 +848,33 @@ fn build_search_form(
         );
         if let Some(v3) = opened_by_or_values.get(2) {
             set_slot(5, Some("or"), "openedBy", "=", v3.clone());
+        }
+    } else if use_status_or {
+        // - group1 (slot1~3): non-status filters
+        // - group2 (slot4~6): status = A [or B] [or C]
+        let group1: Vec<_> = common
+            .into_iter()
+            .filter(|(field, _, _)| *field != "status")
+            .collect();
+        for (idx, (field, operator, value)) in group1.into_iter().take(3).enumerate() {
+            set_slot(idx, None, field, operator, value);
+        }
+        set_slot(
+            3,
+            Some("AND"),
+            "status",
+            "=",
+            status_or_values.first().cloned().unwrap_or_default(),
+        );
+        set_slot(
+            4,
+            Some("or"),
+            "status",
+            "=",
+            status_or_values.get(1).cloned().unwrap_or_default(),
+        );
+        if let Some(v3) = status_or_values.get(2) {
+            set_slot(5, Some("or"), "status", "=", v3.clone());
         }
     } else {
         // Non-OR mode: deterministically fill all slots from a condition list.

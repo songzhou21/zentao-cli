@@ -40,7 +40,10 @@ fn parses_browse_json_fixture() {
     assert_eq!(closed.assigned_to, "Closed");
     assert_eq!(closed.resolved_by, "肖会中");
 
-    assert_eq!(result.total.as_deref(), Some("本页共 64 个Bug，未解决 2。"));
+    assert_eq!(
+        result.total.as_deref(),
+        Some("本页共 64 个 Bug，未解决 2。")
+    );
 }
 
 #[test]
@@ -62,7 +65,7 @@ fn parses_assigned_browse_json_fixture() {
         .bugs
         .iter()
         .all(|bug| bug.resolved_date.starts_with("2026-07-")));
-    assert_eq!(result.total.as_deref(), Some("本页共 5 个Bug，未解决 0。"));
+    assert_eq!(result.total.as_deref(), Some("本页共 5 个 Bug，未解决 0。"));
 }
 
 #[test]
@@ -70,7 +73,7 @@ fn parses_empty_browse_json_fixture() {
     let body = include_str!("../tests/fixtures/search/browse_empty.json");
     let result = parse_browse_json(body).expect("parse");
     assert!(result.bugs.is_empty());
-    assert_eq!(result.total.as_deref(), Some("本页共 0 个Bug，未解决 0。"));
+    assert_eq!(result.total.as_deref(), Some("本页共 0 个 Bug，未解决 0。"));
 }
 
 #[test]
@@ -85,7 +88,7 @@ fn browse_json_summary_strips_html_tags() {
     let result = parse_browse_json(&payload.to_string()).expect("parse");
     assert_eq!(
         result.total.as_deref(),
-        Some("本页共 10 个Bug，未解决 10。")
+        Some("本页共 10 个 Bug，未解决 10。")
     );
 }
 
