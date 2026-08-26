@@ -5,7 +5,7 @@ description: Query and view Zentao bugs — filter by title, assignee, resolver,
 
 # Zentao Bug Workflow
 
-Zentao (禅道) is a project management and bug tracking platform. Use the `zentao` CLI to query it. **Agents should always add `--json` (or `--json=fields`) for structured output** — do not rely on human-readable tables (`bug view` defaults to JSON; `--json` only trims fields).
+Zentao (禅道) is a project management and bug tracking platform. Use the `zentao` CLI to query it. **Agents should always add `--json` (or `--json=fields`) for structured output** — do not rely on human-readable tables or `--markdown` (`bug view` defaults to JSON; `--json` only trims fields).
 
 Entry points: `bug view <ID|URL>` / `bug list` / `bug stats` / `bug report` / `bug candidates --build`.
 
@@ -70,10 +70,12 @@ zentao bug report --resolved-by zhousong --weekly --json=name,count,id,displayTi
 zentao bug view 57801
 zentao bug view 57801 --json=id,title,state,assignee,description,history,images,attachments,url
 zentao bug view http://example/zentao/bug-view-57801.html --json=id,title,history
+zentao bug view 57801 --markdown
 ```
 
 - Fields: `id` `title` `priority` `state` `openedBy` `openedDate` `assignee` `resolvedBy` `resolvedDate` `resolvedBuild` `description` `history` `images` `attachments` `url`.
 - `description` and `history[].comment` are stripped HTML. `images` are collected from `<img src>` in HTML. `history` is an array of `at` `action` `actor`, optionally `assignee` `changes` `comment`.
+- `--markdown` projects the full JSON into Markdown (description/comments become Markdown, images as `![](url)`). Mutually exclusive with `--json` and `--raw-json`.
 - Use `--raw-json` for the raw API response (mutually exclusive with `--json`).
 
 ## Debug (only when user asks to analyze/fix a bug)

@@ -6,7 +6,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 
 - Bug 资源入口：`zentao bug list`、`zentao bug stats`、`zentao bug report`、`zentao bug view <ID|URL>`、`zentao bug candidates --build`。
 - `bug candidates --build`（版本候选）/ `--module`（模块候选）默认人类表格（编号/版本 或 编号/模块）；`--json[=value,name]` 输出 JSON（`value`,`name`）。`value` 用于 `--opened-build` / `--resolved-build` / `--module`。可跟关键词做名称包含过滤。
-- `bug view` 拉 `bug-view-<id>.json`（`{status,data,md5}`），只输出 JSON；默认完整对象，`--json=fields` 裁剪。不提供 Markdown 文档，无 `-o`。
+- `bug view` 拉 `bug-view-<id>.json`（`{status,data,md5}`）；默认完整 JSON，`--json=fields` 裁剪。`--markdown` 从完整 JSON 投影人类 Markdown（描述/备注 HTML 转为 Markdown，图片写成 `![](url)`）；与 `--json` / `--raw-json` 互斥。无 `-o`。
 - 详情 JSON 字段：`id,title,priority,state,openedBy,openedDate,assignee,resolvedBy,resolvedDate,resolvedBuild,description,history,images,attachments,url`。`state` 为三态，不要 `resolution`。人员用显示名；`resolvedBuild` 用 `builds` 展示名；日期用详情接口完整时间。
 - `description` 与历史 `comment` 是去样式 HTML（留 `p` `br` `ol` `ul` `li` `img` `a`）。`images` 从描述/备注 HTML 的 `<img src>` 收集绝对地址。附件用 `files.title` + `webPath`。`history` 是事件数组（`at`/`action`/`actor`，按需 `assignee`/`changes`/`comment`）；`changes` 为 `field`+`label`+`old`+`new`。
 - `bug view --raw-json` 输出接口原始 JSON：把 `data` 从转义字符串展开成对象后再格式化。与 `--json` 互斥。
@@ -31,7 +31,7 @@ macOS 禅道 CLI。Chrome Cookie 读取依赖 macOS Keychain；本项目的支�
 ## 开发规范
 
 - 凡有结构化输出的命令，先做 `--json` API；人类可读再投影同一份字段，不要另算列或另做一套数据。
-- 表头中文，字段名仍英文。无人类表格的命令（如 `bug view`）只出 JSON。
+- 表头中文，字段名仍英文。`bug view` 默认 JSON；`--markdown` 从同一份完整 JSON 投影。
 
 ## 技能文档
 

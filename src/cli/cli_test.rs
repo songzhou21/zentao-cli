@@ -873,6 +873,29 @@ fn bug_view_raw_json_conflicts_with_json() {
 }
 
 #[test]
+fn bug_view_parses_markdown_flag() {
+    let cli = Cli::try_parse_from(["zentao", "bug", "view", "1", "--markdown"]).expect("parse");
+    match cli.command {
+        Commands::Bug(BugArgs {
+            command: BugSubCommands::View(args),
+        }) => {
+            assert!(args.markdown);
+            assert!(args.json.is_none());
+            assert!(!args.raw_json);
+        }
+        _ => panic!("unexpected command"),
+    }
+}
+
+#[test]
+fn bug_view_markdown_conflicts_with_json_and_raw_json() {
+    assert!(Cli::try_parse_from(["zentao", "bug", "view", "1", "--markdown", "--json"]).is_err());
+    assert!(
+        Cli::try_parse_from(["zentao", "bug", "view", "1", "--markdown", "--raw-json"]).is_err()
+    );
+}
+
+#[test]
 fn json_fields_are_selected_and_normalized() {
     let result = search::SearchResult {
         bugs: vec![search::BugRow {

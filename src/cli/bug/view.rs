@@ -27,6 +27,13 @@ pub(crate) struct BugViewArgs {
     /// 输出禅道详情接口的原始 JSON（解开 data 转义字符串并格式化）
     #[arg(long, default_value_t = false, conflicts_with = "json")]
     pub(crate) raw_json: bool,
+    /// 从完整 JSON 投影 Markdown（与 --json / --raw-json 互斥）
+    #[arg(
+        long,
+        default_value_t = false,
+        conflicts_with_all = ["json", "raw_json"]
+    )]
+    pub(crate) markdown: bool,
 }
 
 pub(crate) fn run(args: BugViewArgs, global: &GlobalArgs) -> Result<()> {
@@ -57,8 +64,16 @@ pub(crate) fn run(args: BugViewArgs, global: &GlobalArgs) -> Result<()> {
     }
 
     let detail = bug::parse_bug_json(&parsed_bug.bug_url, &json_body)?;
-    let fields = args.json.as_deref().unwrap_or("");
+    let fields = if args.markdown {
+        ""
+    } else {
+        args.json.as_deref().unwrap_or("")
+    };
     let json = view::render_json(parsed_bug.id, &parsed_bug.site_url, &detail, fields)?;
+    if args.markdown {
+        print!("{}", view::render_markdown(&json));
+        return Ok(());
+    }
     print_json(&json)?;
     Ok(())
 }

@@ -25,8 +25,8 @@ _Avoid_: Login method, credential store
 _Avoid_: Search result, report, 列表 HTML 短日期, 中文解决方案
 
 **Bug View**:
-按 Bug ID 或详情 URL 读取单条 Bug 的详情，只以 JSON 输出。不提供人类可读的详情文档。默认打印完整 JSON；`--json=fields` 裁剪字段。状态用三态 `state`（激活 / 待验证 / 关闭），不用解决方案 `resolution`。人员字段用显示名；上线版本用展示名。创建时间、解决时间是独立字段。描述和备注正文是去掉全部样式后的 HTML 结构。图片列表从 HTML 的 `<img>` 收集。历史是事件数组，不是一篇叙述。
-_Avoid_: Markdown 详情, show, 页面刮取, 解决状态, 账号当人员字段, 版本 ID, 默认必须带 --json, html2md 正文, 从 Markdown 反解 images, history 字符串
+按 Bug ID 或详情 URL 读取单条 Bug 的详情。默认打印完整 JSON；`--json=fields` 裁剪字段。`--markdown` 从完整 JSON 投影人类 Markdown，不是第二套详情数据。状态用三态 `state`（激活 / 待验证 / 关闭），不用解决方案 `resolution`。人员字段用显示名；上线版本用展示名。创建时间、解决时间是独立字段。描述和备注正文是去掉全部样式后的 HTML 结构。图片列表从 HTML 的 `<img>` 收集。历史是事件数组，不是一篇叙述。
+_Avoid_: show, 页面刮取, 解决状态, 账号当人员字段, 版本 ID, 默认必须带 --json, 从 Markdown 反解 images, history 字符串, 人读另算一套
 
 **Description HTML**:
 Bug 描述（及历史备注正文）在详情 JSON 里的形态：保留 `p` `br` `ol` `ul` `li` `img` `a`；拆掉 `span` `strong` `b` `em` `i` 等包装；去掉全部 `style` / `class` / `onload` 等属性。`img` 只留绝对 `src`，`a` 只留 `href`。`images` 从这些 `<img src>` 按出现顺序去重收集。

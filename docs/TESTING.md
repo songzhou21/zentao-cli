@@ -6,7 +6,7 @@
 
 - 优先保证回归稳定性
 - 以单元测试为主，聚焦核心规则
-- `bug view` 使用真实 fixture（JSON + 对照 HTML）做解析回归，不访问禅道
+- `bug view` 使用真实 fixture（JSON + 对照 HTML）做解析回归，不访问禅道；Markdown 从完整 JSON 投影，不另算字段
 - `bug list` / `bug stats` / `bug report` 只使用固化浏览 JSON fixture（`bug-browse-…-bySearch-myQueryID.json`）做解析、列表 JSON、聚合与报告分组回归，不保留列表 HTML 样本
 - 避免依赖真实禅道、真实 Chrome 环境
 
